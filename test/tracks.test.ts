@@ -92,17 +92,17 @@ describe('what reaches the map', () => {
 
 describe('parseTrackSet', () => {
   it('rejects an unknown version rather than rendering an empty chart', () => {
-    expect(() => parseTrackSet({ version: 3, tracks: [] })).toThrow(/version/);
+    expect(() => parseTrackSet({ version: 4, tracks: [] })).toThrow(/version/);
   });
 
   it('rejects a malformed file', () => {
     expect(() => parseTrackSet(null)).toThrow();
-    expect(() => parseTrackSet({ version: 2 })).toThrow(/tracks/);
+    expect(() => parseTrackSet({ version: 3 })).toThrow(/tracks/);
   });
 
   it('keeps the excluded list, which is data and not an error', () => {
     const set = parseTrackSet({
-      version: 2, generatedAt: '', generator: '', tracks: [],
+      version: 3, generatedAt: '', generator: '', tracks: [],
       excluded: [{ id: 'S5_2512161519', reason: 'no navsat_log.json' }],
     });
     expect(set.excluded).toHaveLength(1);

@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error -- plain .mjs server, deliberately stdlib-only and
-// build-free so it runs on a host that has only checked out the repo.
 import { cacheControl } from '../serve.mjs';
 
 /*

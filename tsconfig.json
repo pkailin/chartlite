@@ -13,6 +13,14 @@
     "exactOptionalPropertyTypes": true,
     "noFallthroughCasesInSwitch": true,
 
+    /* The adapter and the server are plain .mjs on purpose: they run under
+       bare node with no build step, which is what makes them usable on a host
+       that has only checked out the repo. allowJs lets the tests import them
+       and lets tsc infer their types, so the shared band edges live in exactly
+       one file -- a .d.ts beside them would be a second place to drift. */
+    "allowJs": true,
+    "checkJs": false,
+
     "resolveJsonModule": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,

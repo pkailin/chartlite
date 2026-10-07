@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Chart from './map/Chart';
+import CoveragePanel from './panels/CoveragePanel';
 import {
   EMPTY_TRACK_SET,
   SENSORS,
@@ -98,13 +99,16 @@ export default function App() {
           ))}
         </nav>
       </header>
-      <main className="stage">
+      <main className="body">
+        <CoveragePanel set={set} sensor={sensor} />
+        <div className="stage">
         <Chart tracks={set.tracks} sensor={sensor} />
         {error !== null && (
           <div className="load-error" role="alert">
             Could not load tracks: {error}
           </div>
         )}
+        </div>
       </main>
     </div>
   );

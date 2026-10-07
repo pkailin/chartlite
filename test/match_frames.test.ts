@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error -- plain .mjs adapter, deliberately not TypeScript.
 import { matchFrames } from '../tools/ingest_kr_navsat.mjs';
 
 /** A 5 Hz GPS log, as KR's are: a fix every 200 ms. */
@@ -18,7 +17,7 @@ describe('matchFrames', () => {
     const { dots, unmatched } = matchFrames(pts, [ns(1_765_950_878_410)]);
     expect(unmatched).toBe(0);
     expect(dots).toHaveLength(1);
-    expect(dots[0].t).toBe(1_765_950_878_400);  // 400, not 600
+    expect(dots[0]?.t).toBe(1_765_950_878_400);  // 400, not 600
   });
 
   it('looks backwards as well as forwards', () => {
@@ -27,7 +26,7 @@ describe('matchFrames', () => {
     // that only took the fix at-or-after would still be right here, so the
     // real check is the other side:
     const { dots } = matchFrames(pts, [ns(1_765_950_878_610)]);
-    expect(dots[0].t).toBe(1_765_950_878_600);
+    expect(dots[0]?.t).toBe(1_765_950_878_600);
   });
 
   /*
@@ -41,7 +40,7 @@ describe('matchFrames', () => {
       ns(1_765_950_878_010), ns(1_765_950_878_020), ns(1_765_950_878_030),
     ]);
     expect(dots).toHaveLength(1);
-    expect(dots[0].n).toBe(3);
+    expect(dots[0]?.n).toBe(3);
   });
 
   /*
@@ -84,7 +83,7 @@ describe('matchFrames', () => {
   it('carries the fix position, never the frame’s own', () => {
     const pts = fixes(3);
     const { dots } = matchFrames(pts, [ns(1_765_950_878_400)]);
-    expect(dots[0].lon).toBe(pts[2]?.lon);
-    expect(dots[0].lat).toBe(pts[2]?.lat);
+    expect(dots[0]?.lon).toBe(pts[2]?.lon);
+    expect(dots[0]?.lat).toBe(pts[2]?.lat);
   });
 });

@@ -1,7 +1,4 @@
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error -- plain .mjs adapter, deliberately not TypeScript: it runs
-// under bare node with no build step, which is what makes it usable on a host
-// that has only checked out the repo.
 import { parseNavsat } from '../tools/ingest_kr_navsat.mjs';
 
 /**

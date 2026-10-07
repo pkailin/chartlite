@@ -56,6 +56,11 @@ import {
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import {
+  AXES, BANDS, BAND_LABELS,
+  binOf, glintBand, illuminationBand, rainBand, rainMmPerH, sunPosition, windBand,
+} from './odd.mjs';
+import { fetchDay, makeReader } from './nea.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -112,6 +117,21 @@ const MATCH_TOLERANCE_MS = 1000;
 
 /** A frame file: digits, then an extension. The digits are a ns epoch. */
 const FRAME_NAME = /^(\d+)\.[A-Za-z0-9]+$/;
+
+/**
+ * How far a weather snapshot may sit from a frame before it is UNKNOWN.
+ *
+ * Wind arrives every minute and rain every five, so 5 min places almost
+ * everything while still refusing to carry a reading across a long outage. A
+ * value stretched over an hour is a guess wearing a measurement's clothes.
+ */
+const WEATHER_TOLERANCE_MS = 5 * 60_000;
+
+/** NEA parameters that feed an axis, and the unit each must report in. */
+const WEATHER = [
+  { axis: 'wind', param: 'wind-speed', unit: 'knots' },
+  { axis: 'rain', param: 'rainfall', unit: 'mm' },
+];
 
 /* ── Transports ─────────────────────────────────────────────────────────────
  *
@@ -355,6 +375,58 @@ export function matchFrames(points, stampsNs, toleranceMs = MATCH_TOLERANCE_MS) 
 }
 
 
+
+/* ── Conditioning ───────────────────────────────────────────────────────── */
+
+/** The Singapore-time days a set of tracks touches. */
+export function corpusDays(tracks) {
+  const days = new Set();
+  for (const t of tracks) {
+    for (const p of t.points) {
+      days.add(new Date(p.t + 8 * 3600_000).toISOString().slice(0, 10));
+    }
+  }
+  return [...days].sort();
+}
+
+/**
+ * Attach an ODD band vector to every frame dot.
+ *
+ * Written as INDICES into BANDS, not names: five strings per dot across 39,000
+ * dots is megabytes of repeated text, five small integers is not. `null` means
+ * unknown and survives as null — it is a state, not a missing value to be
+ * filled in.
+ *
+ * Wind and rain come from the nearest reporting station at the nearest minute.
+ * Illumination and glint are computed from the fix itself and need no source
+ * at all, which is why they are the only two axes that can never be missing
+ * for a dot that exists.
+ */
+export function conditionDots(track, readers) {
+  const byT = new Map(track.points.map((p) => [p.t, p]));
+
+  for (const sensor of Object.keys(SENSOR_DIRS)) {
+    for (const dot of track.frames[sensor]) {
+      const fix = byT.get(dot.t);
+      const sun = sunPosition(dot.t, dot.lat, dot.lon);
+
+      const wind = readers.wind(dot.t, dot.lat, dot.lon);
+      const rain = readers.rain(dot.t, dot.lat, dot.lon);
+
+      dot.c = [
+        wind === null ? null : windBand(wind.value),
+        // NEA reports a 5-minute ACCUMULATION in mm; the band is an INTENSITY
+        // in mm/h. Converting here, once, is the whole reason rainMmPerH is a
+        // named function rather than a literal 12.
+        rain === null ? null : rainBand(rainMmPerH(rain.value)),
+        illuminationBand(sun.elevation),
+        glintBand(fix?.heading ?? NaN, sun.azimuth),
+        binOf(dot.t),
+      ];
+    }
+  }
+}
+
 /* ── Run ────────────────────────────────────────────────────────────────── */
 
 /** Map over `items` with at most `limit` in flight, preserving order. */
@@ -478,10 +550,45 @@ async function main() {
     }
   });
 
+  /*
+   * Weather, fetched BY THE DAYS THE CORPUS TOUCHES — never polled.
+   *
+   * A live poller only holds weather for the wall-clock periods it happened to
+   * be running, so a session recorded while it was down can never be
+   * conditioned. Asking NEA by date cannot miss, however long after the fact.
+   */
+  const days = corpusDays(tracks);
+  const readers = {};
+  let weatherOk = true;
+  if (tracks.length > 0) {
+    console.log(`\nweather for ${days.join(', ')}`);
+    for (const { axis, param, unit } of WEATHER) {
+      try {
+        const fetched = await mapLimit(days, 2, (d) => fetchDay(param, d, unit));
+        const snaps = fetched.reduce((a, f) => a + f.series.length, 0);
+        readers[axis] = makeReader(fetched, WEATHER_TOLERANCE_MS);
+        console.log(`  ${param}: ${snaps.toLocaleString()} snapshots`);
+      } catch (e) {
+        // The axis goes UNKNOWN rather than the run failing. A chart with no
+        // wind is honest; a chart with invented wind is not.
+        weatherOk = false;
+        readers[axis] = () => null;
+        console.log(`  ${param}: UNAVAILABLE — ${e.message}`);
+      }
+    }
+    for (const t of tracks) conditionDots(t, readers);
+  }
+
   const set = {
-    version: 2,
+    version: 3,
     generatedAt: new Date().toISOString(),
     generator: `tools/ingest_kr_navsat.mjs ${src.describe}`,
+    // Carried so the file describes its own band indices and the app needs no
+    // second copy of the taxonomy.
+    axes: AXES,
+    bands: BANDS,
+    bandLabels: BAND_LABELS,
+    days,
     tracks,
     excluded,
   };

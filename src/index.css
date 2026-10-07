@@ -257,3 +257,155 @@ body {
   font-variant-numeric: tabular-nums;
   opacity: 0.75;
 }
+
+/* ── Body: panel beside chart ──────────────────────────────────────────── */
+
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+/* ── ODD coverage panel ────────────────────────────────────────────────── */
+
+.panel {
+  flex: 0 0 17rem;
+  overflow-y: auto;
+  padding: 0.9rem 0.9rem 2rem;
+  background: var(--bar);
+  border-right: 1px solid var(--rule);
+}
+
+.panel-title {
+  margin: 0 0 0.3rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.panel-hint {
+  margin: 0 0 1rem;
+  font-size: 0.68rem;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+
+.panel-foot {
+  margin: 1.2rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.64rem;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+
+.axis {
+  margin-bottom: 1.1rem;
+}
+
+.axis-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+}
+
+.axis-name {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+/* "3/4" — how many bands of this axis have ever been captured. */
+.axis-fill {
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-dim);
+}
+
+.band + .band {
+  margin-top: 0.25rem;
+}
+
+.band-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.66rem;
+  line-height: 1.3;
+}
+
+.band-label {
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.band-pct {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-dim);
+}
+
+.band-track {
+  height: 4px;
+  margin-top: 2px;
+  background: rgba(22, 32, 42, 0.07);
+}
+
+.band-fill {
+  height: 100%;
+  background: var(--external);
+}
+
+/* An empty band keeps its row and dims: the gap is the information, so it
+   must stay legible rather than disappearing into the background. */
+.band-empty .band-label,
+.band-empty .band-pct {
+  color: var(--ink-dim);
+  opacity: 0.6;
+}
+
+.band-empty .band-fill {
+  background: var(--rule);
+}
+
+.band-unknown .band-label {
+  font-style: italic;
+  color: var(--alarm);
+}
+
+.axis-absent {
+  margin-top: 1.4rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--rule);
+}
+
+.absent {
+  margin: 0;
+  font-size: 0.64rem;
+  line-height: 1.45;
+}
+
+.absent-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.12rem 0;
+}
+
+.absent-row dt {
+  color: var(--ink-dim);
+  white-space: nowrap;
+}
+
+.absent-row dd {
+  margin: 0;
+  color: var(--ink-dim);
+  opacity: 0.75;
+  text-align: right;
+}

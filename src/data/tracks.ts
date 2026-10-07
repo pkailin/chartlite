@@ -56,6 +56,18 @@ export interface FrameDot {
   t: number;
   /** Frames matched to this fix. */
   n: number;
+  /**
+   * ODD band INDICES, in `TrackSet.axes` order, or null for unknown.
+   *
+   * Indices rather than names because five strings across 39,000 dots is
+   * megabytes of repeated text. The index tables travel in the file, so it
+   * stays self-describing and the app keeps no second copy of the taxonomy.
+   *
+   * `null` is a STATE — no station reported, or no heading to compute a glint
+   * against — and survives as null all the way to the panel, which shows it as
+   * `unknown` rather than quietly dropping it from the denominator.
+   */
+  c?: (number | null)[];
 }
 
 export interface Track {
@@ -102,7 +114,15 @@ export interface ExcludedTrack {
 
 export interface TrackSet {
   /** Bumped when the shape changes, so a stale file fails loudly. */
-  version: 2;
+  version: 3;
+  /** Axis order, which is the order of every dot's `c` vector. */
+  axes: string[];
+  /** Ordered band ids per axis — the index tables for `c`. */
+  bands: Record<string, string[]>;
+  /** Display labels per axis, same order as `bands`. */
+  bandLabels: Record<string, string[]>;
+  /** Singapore-time days the corpus touches. */
+  days: string[];
   /** ISO 8601, when the adapter ran. */
   generatedAt: string;
   /** What produced this file, for the same reason `source` exists. */
@@ -116,7 +136,11 @@ export interface TrackSet {
 }
 
 export const EMPTY_TRACK_SET: TrackSet = {
-  version: 2,
+  version: 3,
+  axes: [],
+  bands: {},
+  bandLabels: {},
+  days: [],
   generatedAt: '',
   generator: '',
   tracks: [],
@@ -179,7 +203,7 @@ export function parseTrackSet(raw: unknown): TrackSet {
     throw new Error('track set: not an object');
   }
   const o = raw as Record<string, unknown>;
-  if (o['version'] !== 2) {
+  if (o['version'] !== 3) {
     throw new Error(
       `track set: unsupported version ${String(o['version'])} — re-run the adapter`,
     );
@@ -188,7 +212,11 @@ export function parseTrackSet(raw: unknown): TrackSet {
     throw new Error('track set: `tracks` is not an array');
   }
   return {
-    version: 2,
+    version: 3,
+    axes: (o['axes'] as string[] | undefined) ?? [],
+    bands: (o['bands'] as Record<string, string[]> | undefined) ?? {},
+    bandLabels: (o['bandLabels'] as Record<string, string[]> | undefined) ?? {},
+    days: (o['days'] as string[] | undefined) ?? [],
     generatedAt: String(o['generatedAt'] ?? ''),
     generator: String(o['generator'] ?? ''),
     tracks: (o['tracks'] as Track[]).map((t) => ({
@@ -282,4 +310,35 @@ export function framesToGeoJSON(tracks: readonly Track[], sensor: SensorId): {
       })),
     ),
   };
+}
+
+/**
+ * Frames per band, for one axis and one sensor, across every track.
+ *
+ * Counts FRAMES and not dots. A dot holding six camera frames is six frames
+ * captured in that condition, and a coverage figure that counted it once would
+ * under-report exactly the places where the sensor worked hardest.
+ *
+ * `unknown` is returned alongside the bands rather than folded into them or
+ * dropped. A percentage whose denominator silently excluded the unmeasured
+ * rows is the oldest way to make thin evidence look complete.
+ */
+export function axisCoverage(
+  tracks: readonly Track[],
+  sensor: SensorId,
+  axisIndex: number,
+  bandCount: number,
+): { counts: number[]; unknown: number; total: number } {
+  const counts = new Array<number>(bandCount).fill(0);
+  let unknown = 0;
+  let total = 0;
+  for (const t of tracks) {
+    for (const d of t.frames[sensor] ?? []) {
+      total += d.n;
+      const b = d.c?.[axisIndex];
+      if (b === null || b === undefined) unknown += d.n;
+      else counts[b] = (counts[b] ?? 0) + d.n;
+    }
+  }
+  return { counts, unknown, total };
 }
