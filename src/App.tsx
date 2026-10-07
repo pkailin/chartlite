@@ -10,11 +10,20 @@ const TRACKS_URL = './tracks.json';
  *
  * App owns the data and hands it to the map — the map fetches nothing. See the
  * rule at the top of `map/Chart.tsx`.
+ *
+ * THE BAR CARRIES NO STATISTICS. It held a drawn/excluded count briefly and
+ * that was the wrong place for it: the bar is the tool's identity, not its
+ * readout, and a number parked there is read once and then stops being read.
+ * What the adapter included and excluded is printed when it runs. When a
+ * surface exists that is about the ingest, the count belongs on that.
+ *
+ * A FAILED LOAD still has to say so somewhere, so it is reported over the
+ * chart rather than silently swallowed — a chart with no tracks and no
+ * explanation is indistinguishable from one where nothing was ingested.
  */
 export default function App() {
   const [set, setSet] = useState<TrackSet>(EMPTY_TRACK_SET);
   const [error, setError] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -23,8 +32,7 @@ export default function App() {
         /*
          * A 404 is the ORDINARY state, not an error: a fresh clone has no
          * tracks file because the adapter has not been run and, for KR, its
-         * output may not be committed. Reported as "no tracks ingested",
-         * which is a different sentence from "the fetch failed".
+         * output may not be committed.
          */
         if (r.status === 404) return null;
         if (!r.ok) throw new Error(`HTTP ${String(r.status)}`);
@@ -33,53 +41,27 @@ export default function App() {
       .then((raw) => {
         if (!live) return;
         if (raw !== null) setSet(parseTrackSet(raw));
-        setLoaded(true);
       })
       .catch((e: unknown) => {
         if (!live) return;
         setError(e instanceof Error ? e.message : String(e));
-        setLoaded(true);
       });
     return () => { live = false; };
   }, []);
-
-  const n = set.tracks.length;
 
   return (
     <div className="app">
       <header className="bar">
         <span className="bar-name">CHARTLITE</span>
         <span className="bar-where">Singapore Strait</span>
-
-        <span className="bar-spacer" />
-
-        {/* What is on the chart, and what is not. The excluded count is shown
-            beside the drawn count on purpose: three tracks from a five-session
-            corpus looks complete unless the other two are named. */}
-        {error !== null ? (
-          <span className="bar-stat bar-stat-bad" role="alert">tracks: {error}</span>
-        ) : !loaded ? (
-          <span className="bar-stat">loading…</span>
-        ) : n === 0 ? (
-          <span className="bar-stat">no tracks ingested</span>
-        ) : (
-          <>
-            <span className="bar-stat">
-              <b>{n}</b> track{n === 1 ? '' : 's'}
-            </span>
-            {set.excluded.length > 0 && (
-              <span
-                className="bar-stat bar-stat-dim"
-                title={set.excluded.map((e) => `${e.id}: ${e.reason}`).join('\n')}
-              >
-                {set.excluded.length} excluded
-              </span>
-            )}
-          </>
-        )}
       </header>
       <main className="stage">
         <Chart tracks={set.tracks} />
+        {error !== null && (
+          <div className="load-error" role="alert">
+            Could not load tracks: {error}
+          </div>
+        )}
       </main>
     </div>
   );

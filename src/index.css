@@ -19,7 +19,7 @@
      when our own captures are drawn here they get their own, and the
      difference must be visible without reading a legend. Mirrors
      EXTERNAL_INK in map/layers/trackLayer.ts. */
-  --external: #B5179E;
+  --external: #C8102E;
 
   color-scheme: light;
 }
@@ -115,32 +115,24 @@ body {
   word-break: break-word;
 }
 
-/* ── Bar statistics ────────────────────────────────────────────────────── */
+/* ── Load failure ─────────────────────────────────────────────────────── */
 
-.bar-spacer {
-  flex: 1 1 auto;
-}
-
-.bar-stat {
-  font-size: 0.72rem;
-  letter-spacing: 0.03em;
-  color: var(--ink-dim);
-}
-
-.bar-stat b {
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-}
-
-.bar-stat-dim {
-  color: var(--ink-dim);
-  opacity: 0.8;
-  border-bottom: 1px dotted var(--rule);
-  cursor: help;
-}
-
-.bar-stat-bad {
+/*
+ * Over the chart, not in the bar. The bar is the tool's identity; a message
+ * parked there is read once and then stops being read.
+ */
+.load-error {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 3;
+  max-width: 24rem;
+  padding: 0.5rem 0.7rem;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid var(--alarm);
+  border-left: 3px solid var(--alarm);
   color: var(--alarm);
+  font-size: 0.76rem;
 }
 
 /* ── Hover card ────────────────────────────────────────────────────────── */

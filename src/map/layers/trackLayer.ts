@@ -16,15 +16,17 @@ export const TRACK_HEAD_LAYER = 'track-head';
 /**
  * Ink for anything that is NOT ours.
  *
- * A deep magenta, chosen to lose to nothing on OpenStreetMap's palette: the
- * basemap spends red on motorways, green on parks and blue on water, and a
- * track in any of those reads as part of the map rather than drawn over it.
+ * A deep crimson, darker and more saturated than the pink-red OpenStreetMap
+ * spends on motorways, so a track crossing a trunk road still reads as drawn
+ * over the map rather than part of it. That collision is the reason to keep
+ * this value dark: a brighter red would be the one colour on screen that the
+ * basemap already uses for a line of similar weight.
  *
  * It is one colour for every external corpus on purpose. When our own captures
  * are drawn here they get their own, and the difference between "measured by
  * us" and "someone else's" must be visible without reading a legend.
  */
-export const EXTERNAL_INK = '#B5179E';
+export const EXTERNAL_INK = '#C8102E';
 
 export const LINE_WIDTH = 2.4;
 
