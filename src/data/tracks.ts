@@ -203,34 +203,6 @@ export function parseTrackSet(raw: unknown): TrackSet {
   };
 }
 
-/** GeoJSON the track layer draws, one LineString per track. */
-export function tracksToGeoJSON(tracks: readonly Track[]): {
-  type: 'FeatureCollection';
-  features: {
-    type: 'Feature';
-    id: string;
-    geometry: { type: 'LineString'; coordinates: [number, number][] };
-    properties: Record<string, string | number | boolean>;
-  }[];
-} {
-  return {
-    type: 'FeatureCollection',
-    features: tracks
-      // A LineString needs two positions. A one-fix track is drawn by the
-      // point layer instead, never dropped.
-      .filter((t) => t.points.length >= 2)
-      .map((t) => ({
-        type: 'Feature' as const,
-        id: t.id,
-        geometry: {
-          type: 'LineString' as const,
-          coordinates: t.points.map((p) => [p.lon, p.lat] as [number, number]),
-        },
-        properties: trackProps(t),
-      })),
-  };
-}
-
 function trackProps(t: Track): Record<string, string | number | boolean> {
   return {
     id: t.id,

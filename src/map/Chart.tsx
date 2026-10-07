@@ -12,15 +12,10 @@ import {
 import {
   TRACK_HEAD_LAYER,
   TRACK_HEAD_SOURCE,
-  TRACK_HIT_LAYER,
-  TRACK_LINE_LAYER,
-  TRACK_SOURCE,
   formatDuration,
   formatSpan,
   hoverFrom,
   trackHeadPaint,
-  trackHitPaint,
-  trackLinePaint,
   type TrackHover,
 } from './layers/trackLayer';
 import {
@@ -34,7 +29,6 @@ import {
 } from './layers/frameLayer';
 import {
   framesToGeoJSON,
-  tracksToGeoJSON,
   trackHeadsToGeoJSON,
   type SensorId,
   type Track,
@@ -122,35 +116,23 @@ export default function Chart({
     const m = map.current;
     if (!m || !ready) return;
 
-    const lines = tracksToGeoJSON(tracks) as unknown as GeoJSON.FeatureCollection;
+    /*
+     * NO TRACK LINE. There was one, connecting every fix, and it is gone on
+     * purpose: the frame dots ARE the subject, and a line under them answered
+     * for them. At camera density the dots sit so close along the path that
+     * the two blurred together, and a reader could not tell whether they were
+     * looking at discrete sensor positions or at a drawn path.
+     *
+     * The heads stay. They mark where each session began, which nothing else
+     * on the chart says, and they keep a session hoverable as a whole rather
+     * than only one frame at a time.
+     */
     const heads = trackHeadsToGeoJSON(tracks) as unknown as GeoJSON.FeatureCollection;
-
-    const lineSrc = m.getSource(TRACK_SOURCE) as maplibregl.GeoJSONSource | undefined;
-    if (lineSrc) lineSrc.setData(lines);
-    else m.addSource(TRACK_SOURCE, { type: 'geojson', data: lines });
 
     const headSrc = m.getSource(TRACK_HEAD_SOURCE) as maplibregl.GeoJSONSource | undefined;
     if (headSrc) headSrc.setData(heads);
     else m.addSource(TRACK_HEAD_SOURCE, { type: 'geojson', data: heads });
 
-    /*
-     * ORDER: the wide transparent hit target goes UNDER the visible line, so
-     * it can never sit on top of the ink it exists to make pointable.
-     */
-    if (!m.getLayer(TRACK_HIT_LAYER)) {
-      m.addLayer({
-        id: TRACK_HIT_LAYER, type: 'line', source: TRACK_SOURCE,
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: trackHitPaint(),
-      });
-    }
-    if (!m.getLayer(TRACK_LINE_LAYER)) {
-      m.addLayer({
-        id: TRACK_LINE_LAYER, type: 'line', source: TRACK_SOURCE,
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: trackLinePaint(),
-      });
-    }
     if (!m.getLayer(TRACK_HEAD_LAYER)) {
       m.addLayer({
         id: TRACK_HEAD_LAYER, type: 'circle', source: TRACK_HEAD_SOURCE,
@@ -196,17 +178,11 @@ export default function Chart({
       m.getCanvas().style.cursor = '';
     };
 
-    // Both the hit line and the head, so a moored session — whose line is
-    // sub-pixel — is hoverable through its dot.
-    for (const id of [TRACK_HIT_LAYER, TRACK_HEAD_LAYER]) {
-      m.on('mousemove', id, show);
-      m.on('mouseleave', id, hide);
-    }
+    m.on('mousemove', TRACK_HEAD_LAYER, show);
+    m.on('mouseleave', TRACK_HEAD_LAYER, hide);
     return () => {
-      for (const id of [TRACK_HIT_LAYER, TRACK_HEAD_LAYER]) {
-        m.off('mousemove', id, show);
-        m.off('mouseleave', id, hide);
-      }
+      m.off('mousemove', TRACK_HEAD_LAYER, show);
+      m.off('mouseleave', TRACK_HEAD_LAYER, hide);
     };
   }, [ready, tracks]);
 

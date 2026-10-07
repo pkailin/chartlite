@@ -6,7 +6,6 @@ import {
   parseTrackSet,
   spanMetres,
   trackHeadsToGeoJSON,
-  tracksToGeoJSON,
   type Track,
 } from '../src/data/tracks';
 
@@ -57,7 +56,7 @@ describe('track geometry', () => {
     const one = track([{ lon: 103.85, lat: 1.25, t: 1 }]);
     expect(spanMetres(one)).toBe(0);
     expect(durationS(one)).toBe(0);
-    expect(() => tracksToGeoJSON([one])).not.toThrow();
+    expect(() => trackHeadsToGeoJSON([one])).not.toThrow();
   });
 });
 
@@ -67,13 +66,6 @@ describe('what reaches the map', () => {
    * loses its source becomes indistinguishable from a position we measured,
    * which is the one mistake this chart must not make.
    */
-  it('carries the source onto every line feature', () => {
-    for (const f of tracksToGeoJSON([TRANSIT, MOORED]).features) {
-      expect(f.properties['source']).toBe('KR AIC');
-      expect(String(f.properties['sourceNote']).length).toBeGreaterThan(0);
-    }
-  });
-
   it('carries the source onto every head feature', () => {
     for (const f of trackHeadsToGeoJSON([TRANSIT, MOORED]).features) {
       expect(f.properties['source']).toBe('KR AIC');
@@ -85,15 +77,14 @@ describe('what reaches the map', () => {
    * two of the three KR sessions would not appear at all, and the chart would
    * under-report the corpus while looking complete.
    */
-  it('gives every track a head, including one that cannot be drawn as a line', () => {
+  it('gives every track a head, including a one-fix one', () => {
     const one = track([{ lon: 103.85, lat: 1.25, t: 1 }], { id: 'kr:one' });
-    expect(tracksToGeoJSON([one]).features).toHaveLength(0);
     expect(trackHeadsToGeoJSON([one]).features).toHaveLength(1);
   });
 
   it('flags moored tracks so the hover card can say so', () => {
     const byId = new Map(
-      tracksToGeoJSON([TRANSIT, MOORED]).features.map((f) => [f.properties['id'], f.properties]),
+      trackHeadsToGeoJSON([TRANSIT, MOORED]).features.map((f) => [f.properties['id'], f.properties]),
     );
     expect(byId.get('kr:S')?.['moored']).toBeDefined();
   });

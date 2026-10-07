@@ -1,16 +1,16 @@
 /**
- * How a track is drawn, and what you get when you point at it.
+ * How a session's start mark is drawn, and what you get when you point at it.
+ *
+ * There was a track LINE here too, connecting every fix. It is gone: the frame
+ * dots are the subject, and a line beneath them answered for them — at camera
+ * density the two blurred together and a reader could not tell discrete sensor
+ * positions from a drawn path. `git log` has it if it is ever wanted back.
  *
  * Kept pure — plain objects, no MapLibre import — so the layer specs can be
  * asserted in a test without a GL context, the same way basemap.ts is.
  */
 
-export const TRACK_SOURCE = 'tracks';
 export const TRACK_HEAD_SOURCE = 'track-heads';
-
-export const TRACK_LINE_LAYER = 'track-line';
-/** A wide, invisible line under the visible one: see HIT_WIDTH. */
-export const TRACK_HIT_LAYER = 'track-hit';
 export const TRACK_HEAD_LAYER = 'track-head';
 
 /**
@@ -27,35 +27,6 @@ export const TRACK_HEAD_LAYER = 'track-head';
  * us" and "someone else's" must be visible without reading a legend.
  */
 export const EXTERNAL_INK = '#C8102E';
-
-export const LINE_WIDTH = 2.4;
-
-/**
- * The invisible hit target is far wider than the visible line.
- *
- * A 2.4 px line is roughly a one-pixel hover target once antialiasing is
- * accounted for, and a feature nobody can point at might as well not carry a
- * label. 12 px is a comfortable target that still cannot be confused for a
- * second track, because the tracks here are hundreds of metres apart.
- */
-export const HIT_WIDTH = 12;
-
-export function trackLinePaint(): Record<string, unknown> {
-  return {
-    'line-color': EXTERNAL_INK,
-    'line-width': LINE_WIDTH,
-    'line-opacity': 0.9,
-  };
-}
-
-/** Transparent, not `visibility: none` — a hidden layer is not hoverable. */
-export function trackHitPaint(): Record<string, unknown> {
-  return {
-    'line-color': EXTERNAL_INK,
-    'line-width': HIT_WIDTH,
-    'line-opacity': 0,
-  };
-}
 
 /**
  * The start-of-track dot.
