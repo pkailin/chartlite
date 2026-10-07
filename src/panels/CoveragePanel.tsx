@@ -43,17 +43,29 @@ const ABSENT: { axis: string; why: string }[] = [
   { axis: 'encounter', why: 'not yet built' },
 ];
 
-function pct(n: number, total: number): string {
-  if (total === 0) return '—';
-  const p = (100 * n) / total;
-  // Below 0.1% but non-zero reads as "<0.1%", never as "0.0%": a rounded zero
-  // beside a real zero makes the two indistinguishable, and only one of them
-  // is a gap.
-  if (n > 0 && p < 0.1) return '<0.1%';
-  return `${p.toFixed(1)}%`;
+/**
+ * Frames, grouped, as a plain count.
+ *
+ * Counts rather than percentages because a percentage hides the size of what
+ * it is a percentage OF: 1.7% of rain reads the same whether it rests on 580
+ * frames or on six, and those are very different claims about evidence. The
+ * bar beside it still carries the proportion, so nothing is lost.
+ */
+function count(n: number): string {
+  return n.toLocaleString();
 }
 
 export default function CoveragePanel({ set, sensor }: CoveragePanelProps) {
+  /*
+   * Every axis sums to the same total — each frame is banded on all of them —
+   * so the denominator is stated once at the top rather than repeated per
+   * axis, and the per-band rows are left to be plain counts.
+   */
+  const total = set.tracks.reduce(
+    (a, t) => a + (t.frames[sensor] ?? []).reduce((b, d) => b + d.n, 0),
+    0,
+  );
+
   if (set.axes.length === 0) {
     return (
       <aside className="panel">
@@ -67,14 +79,14 @@ export default function CoveragePanel({ set, sensor }: CoveragePanelProps) {
     <aside className="panel" aria-label="ODD coverage">
       <h2 className="panel-title">ODD coverage</h2>
       <p className="panel-hint">
-        {sensor} frames by condition. Empty bands are drawn at zero — a
-        condition never captured is the thing worth seeing.
+        {total.toLocaleString()} {sensor} frames by condition. Empty bands are
+        drawn at zero — a condition never captured is the thing worth seeing.
       </p>
 
       {set.axes.map((axis, ai) => {
         const bands = set.bands[axis] ?? [];
         const labels = set.bandLabels[axis] ?? bands;
-        const { counts, unknown, total } = axisCoverage(set.tracks, sensor, ai, bands.length);
+        const { counts, unknown } = axisCoverage(set.tracks, sensor, ai, bands.length);
         const filled = counts.filter((c) => c > 0).length;
 
         return (
@@ -93,7 +105,7 @@ export default function CoveragePanel({ set, sensor }: CoveragePanelProps) {
                 <div className={`band${n === 0 ? ' band-empty' : ''}`} key={band}>
                   <div className="band-row">
                     <span className="band-label">{labels[bi] ?? band}</span>
-                    <span className="band-pct">{pct(n, total)}</span>
+                    <span className="band-pct">{count(n)}</span>
                   </div>
                   <div className="band-track">
                     {/* A hairline at zero so an empty band still reads as a
@@ -108,7 +120,7 @@ export default function CoveragePanel({ set, sensor }: CoveragePanelProps) {
               <div className="band band-unknown">
                 <div className="band-row">
                   <span className="band-label">unknown</span>
-                  <span className="band-pct">{pct(unknown, total)}</span>
+                  <span className="band-pct">{count(unknown)}</span>
                 </div>
               </div>
             )}

@@ -349,6 +349,10 @@ body {
 .band-pct {
   font-variant-numeric: tabular-nums;
   color: var(--ink-dim);
+  /* Fixed width so the counts form a column the eye can run down, rather
+     than ragging against the variable-length band labels. */
+  flex: 0 0 3.6rem;
+  text-align: right;
 }
 
 .band-track {
