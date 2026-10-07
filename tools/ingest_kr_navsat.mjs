@@ -86,6 +86,33 @@ const CONCURRENCY = 4;
 /** Directory entries that are not sessions. `@eaDir` is a Synology artifact. */
 const NOT_A_SESSION = /^(@eaDir|\.|\.\.)$/;
 
+/**
+ * Which on-disk folders feed which sensor tab.
+ *
+ * `camera0` and `camera1` are two lenses on ONE hull, so both report the same
+ * position for the same instant. Listing both would double the work and draw
+ * the identical dots — the frame COUNT per place is what differs, and that is
+ * what the aggregation below keeps. `camera0` alone is also the stream KR's
+ * groundtruth is scored against.
+ */
+const SENSOR_DIRS = {
+  camera: ['camera0'],
+  radar: ['simrad'],
+};
+
+/**
+ * How far a frame may sit from its nearest GPS fix before it is NOT placed.
+ *
+ * The logs run at ~5 Hz, so an in-window frame lands within ~100 ms of a fix.
+ * A second is generously wide and still refuses anything that fell in a GPS
+ * dropout. A frame beyond it gets NO position: inventing one is the same
+ * mistake as defaulting a missing fix to (0, 0), just better disguised.
+ */
+const MATCH_TOLERANCE_MS = 1000;
+
+/** A frame file: digits, then an extension. The digits are a ns epoch. */
+const FRAME_NAME = /^(\d+)\.[A-Za-z0-9]+$/;
+
 /* ── Transports ─────────────────────────────────────────────────────────────
  *
  * Two implementations of the same two questions — what sessions are there, and
@@ -108,6 +135,13 @@ function localSource(root) {
     readLog(session) {
       const file = join(base, session, LOG_NAME);
       return existsSync(file) ? readFileSync(file, 'utf8') : null;
+    },
+    listFrames(session, dir) {
+      const d = join(base, session, dir);
+      if (!existsSync(d)) return null;
+      return readdirSync(d)
+        .map((n) => FRAME_NAME.exec(n)?.[1])
+        .filter((x) => x !== undefined);
     },
   };
 }
@@ -144,6 +178,20 @@ function httpSource(rootUrl) {
     },
     async readLog(session) {
       return get(`${base}${encodeURIComponent(session)}/${LOG_NAME}`);
+    },
+    async listFrames(session, dir) {
+      const html = await get(`${base}${encodeURIComponent(session)}/${dir}/`);
+      if (html === null) return null;
+      /*
+       * DEDUPED. An Apache index prints each name twice — once as the href and
+       * once as the link text — so a naive match reports 2,574 frames where
+       * there are 1,287, and every per-place count comes out doubled.
+       */
+      const names = [...html.matchAll(/<a\s+href="([^"]+)"/gi)]
+        .map((m) => decodeURIComponent(m[1]))
+        .map((n) => FRAME_NAME.exec(n)?.[1])
+        .filter((x) => x !== undefined);
+      return [...new Set(names)];
     },
   };
 }
@@ -242,12 +290,70 @@ export function parseNavsat(sessionId, text) {
       sourceNote: SOURCE_NOTE,
       vessel: 'ownship',
       points,
+      // Filled by the run loop, which owns the transport. Present and empty
+      // rather than absent: "we looked and found none" is a different claim
+      // from "nobody looked", and only the first belongs in the output.
+      frames: { camera: [], radar: [] },
+      unmatched: { camera: 0, radar: 0 },
     },
     excluded: null,
     dropped: noFix + nullIsland + noTime,
     droppedDetail: { noFix, nullIsland, noTime },
   };
 }
+
+/* ── Matching frames to fixes ───────────────────────────────────────────── */
+
+/**
+ * Place each frame at the GPS fix nearest in time, and aggregate per fix.
+ *
+ * `points` must be sorted by `t` (the logs are, and the parser preserves
+ * order). Binary search rather than a scan per frame: 40,000 fixes against
+ * 40,000 frames is 1.6e9 comparisons the naive way, and about 600,000 this way.
+ *
+ * THE RESULT IS ONE DOT PER FIX, NOT PER FRAME. Frames arrive at roughly the
+ * GPS rate, so a dot per frame would stack identical circles on one pixel and
+ * make a dense stretch indistinguishable from a sparse one. `n` carries the
+ * count, which is the thing that actually differs between camera and radar.
+ *
+ * A frame further than `toleranceMs` from any fix is NOT placed. It is counted
+ * as unmatched and reported — inventing a position for it would be the same
+ * error as defaulting a missing fix, only harder to see.
+ */
+export function matchFrames(points, stampsNs, toleranceMs = MATCH_TOLERANCE_MS) {
+  const perFix = new Map();
+  let unmatched = 0;
+
+  for (const ns of stampsNs) {
+    const t = nsTextToMs(ns);
+    if (t === null) { unmatched++; continue; }
+
+    // First fix at or after t.
+    let lo = 0, hi = points.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (points[mid].t < t) lo = mid + 1; else hi = mid;
+    }
+
+    // The nearest fix is one of the two straddling t.
+    let best = -1, bestGap = Infinity;
+    for (const i of [lo - 1, lo]) {
+      if (i < 0 || i >= points.length) continue;
+      const gap = Math.abs(points[i].t - t);
+      if (gap < bestGap) { bestGap = gap; best = i; }
+    }
+
+    if (best < 0 || bestGap > toleranceMs) { unmatched++; continue; }
+    perFix.set(best, (perFix.get(best) ?? 0) + 1);
+  }
+
+  const dots = [...perFix.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([i, n]) => ({ lon: points[i].lon, lat: points[i].lat, t: points[i].t, n }));
+
+  return { dots, unmatched };
+}
+
 
 /* ── Run ────────────────────────────────────────────────────────────────── */
 
@@ -308,7 +414,43 @@ async function main() {
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, LOG_NAME), text);
     }
-    return parseNavsat(id, text);
+
+    const parsed = parseNavsat(id, text);
+    if (!parsed.track) return parsed;
+
+    /*
+     * Frames. Listing a directory costs one request and gives the FILENAMES,
+     * which are the timestamps — the images themselves are never fetched, so
+     * 40,000 frame positions cost a few megabytes of HTML rather than the
+     * hundreds of gigabytes the pixels would.
+     */
+    for (const [sensor, dirs] of Object.entries(SENSOR_DIRS)) {
+      const stamps = [];
+      let anyDir = false;
+      for (const d of dirs) {
+        let names;
+        try {
+          names = await src.listFrames(id, d);
+        } catch (e) {
+          parsed.frameErrors ??= [];
+          parsed.frameErrors.push(`${sensor}: ${e.message}`);
+          continue;
+        }
+        if (names === null) continue;          // no such folder for this session
+        anyDir = true;
+        stamps.push(...names);
+      }
+      if (!anyDir && stamps.length === 0) continue;
+
+      const { dots, unmatched } = matchFrames(parsed.track.points, stamps);
+      parsed.track.frames[sensor] = dots;
+      parsed.track.unmatched[sensor] = unmatched;
+
+      if (mirror) {
+        writeFileSync(join(mirror, id, `${sensor}.stamps.txt`), stamps.join('\n'));
+      }
+    }
+    return parsed;
   });
 
   const tracks = [];
@@ -320,7 +462,15 @@ async function main() {
     if (r.track) {
       tracks.push(r.track);
       const d = r.dropped > 0 ? `  (dropped ${String(r.dropped)})` : '';
-      console.log(`  ${id}: ${String(r.track.points.length)} fixes${d}`);
+      const f = Object.keys(SENSOR_DIRS)
+        .map((s2) => {
+          const n = r.track.frames[s2].reduce((a, x) => a + x.n, 0);
+          const u = r.track.unmatched[s2];
+          return `${s2} ${String(n)}${u > 0 ? ` (+${String(u)} unplaced)` : ''}`;
+        })
+        .join(', ');
+      console.log(`  ${id}: ${String(r.track.points.length)} fixes${d} · ${f}`);
+      for (const e of r.frameErrors ?? []) console.log(`    ! ${e}`);
     } else if (r.excluded) {
       excluded.push(r.excluded);
       if (r.failed) failures++;
@@ -329,7 +479,7 @@ async function main() {
   });
 
   const set = {
-    version: 1,
+    version: 2,
     generatedAt: new Date().toISOString(),
     generator: `tools/ingest_kr_navsat.mjs ${src.describe}`,
     tracks,

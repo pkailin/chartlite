@@ -23,7 +23,22 @@ import {
   trackLinePaint,
   type TrackHover,
 } from './layers/trackLayer';
-import { tracksToGeoJSON, trackHeadsToGeoJSON, type Track } from '../data/tracks';
+import {
+  FRAME_LAYER,
+  FRAME_SOURCE,
+  formatStamp,
+  frameDotPaint,
+  frameHoverFrom,
+  EXTERNAL_INK,
+  type FrameHover,
+} from './layers/frameLayer';
+import {
+  framesToGeoJSON,
+  tracksToGeoJSON,
+  trackHeadsToGeoJSON,
+  type SensorId,
+  type Track,
+} from '../data/tracks';
 
 /**
  * The chart.
@@ -40,12 +55,15 @@ export interface ChartProps {
   zoom?: number;
   /** Tracks to draw. Provenance-labelled; see `src/data/tracks.ts`. */
   tracks?: readonly Track[];
+  /** Which sensor's frames to show. One at a time, by design. */
+  sensor?: SensorId;
 }
 
 export default function Chart({
   centre = DEFAULT_CENTRE,
   zoom = DEFAULT_ZOOM,
   tracks = [],
+  sensor = 'camera',
 }: ChartProps) {
   const container = useRef<HTMLDivElement | null>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -54,6 +72,7 @@ export default function Chart({
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const [hover, setHover] = useState<TrackHover | null>(null);
+  const [frameHover, setFrameHover] = useState<FrameHover | null>(null);
   const [hoverAt, setHoverAt] = useState<{ x: number; y: number } | null>(null);
 
   /*
@@ -191,6 +210,51 @@ export default function Chart({
     };
   }, [ready, tracks]);
 
+  /*
+   * Frame dots for the selected sensor.
+   *
+   * Its OWN effect, keyed on `sensor` as well as the data, so switching tabs
+   * only swaps this source — the track lines, the camera position and the
+   * once-only fit are all untouched. Tabs that rebuilt the map would reset the
+   * reader's pan on every click, which is the whole reason they are tabs and
+   * not two separate pages.
+   */
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !ready) return;
+
+    const data = framesToGeoJSON(tracks, sensor) as unknown as GeoJSON.FeatureCollection;
+    const src = m.getSource(FRAME_SOURCE) as maplibregl.GeoJSONSource | undefined;
+    if (src) src.setData(data);
+    else m.addSource(FRAME_SOURCE, { type: 'geojson', data });
+
+    if (!m.getLayer(FRAME_LAYER)) {
+      // Above the track line: the dots are the subject, the line is context.
+      m.addLayer({ id: FRAME_LAYER, type: 'circle', source: FRAME_SOURCE, paint: frameDotPaint(EXTERNAL_INK) });
+    }
+
+    const show = (e: maplibregl.MapLayerMouseEvent) => {
+      const h = frameHoverFrom(e.features?.[0]?.properties as Record<string, unknown> | undefined);
+      if (h) {
+        setFrameHover(h);
+        setHover(null);           // a dot sits on the line; only one card
+        setHoverAt({ x: e.point.x, y: e.point.y });
+        m.getCanvas().style.cursor = 'pointer';
+      }
+    };
+    const hide = () => {
+      setFrameHover(null);
+      setHoverAt(null);
+      m.getCanvas().style.cursor = '';
+    };
+    m.on('mousemove', FRAME_LAYER, show);
+    m.on('mouseleave', FRAME_LAYER, hide);
+    return () => {
+      m.off('mousemove', FRAME_LAYER, show);
+      m.off('mouseleave', FRAME_LAYER, hide);
+    };
+  }, [ready, tracks, sensor]);
+
   if (failed !== null) {
     return (
       <div className="chart-failed" role="alert">
@@ -206,7 +270,22 @@ export default function Chart({
 
   return (
     <div className="chart" ref={container} data-testid="chart">
-      {hover && hoverAt && (
+      {frameHover && hoverAt && (
+        <div
+          className="hover-card"
+          data-testid="frame-hover-card"
+          style={{ left: hoverAt.x + 14, top: hoverAt.y + 14 }}
+        >
+          <div className="hover-source">{frameHover.source} · {frameHover.sensor}</div>
+          <div className="hover-label">{frameHover.label}</div>
+          <dl className="hover-facts">
+            <dt>frames here</dt><dd>{frameHover.n.toLocaleString()}</dd>
+            <dt>at</dt><dd>{formatStamp(frameHover.t)}</dd>
+          </dl>
+          {frameHover.sourceNote && <p className="hover-note">{frameHover.sourceNote}</p>}
+        </div>
+      )}
+      {!frameHover && hover && hoverAt && (
         <div
           className="hover-card"
           data-testid="hover-card"

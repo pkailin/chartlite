@@ -198,3 +198,62 @@ body {
   font-size: 0.68rem;
   color: var(--ink-dim);
 }
+
+/* ── Sensor tabs ───────────────────────────────────────────────────────── */
+
+/*
+ * In the bar, which earlier carried statistics and should not. The difference
+ * is that these are a CONTROL: they change what the chart shows, and the
+ * bar is where a reader looks for what they are currently looking at.
+ */
+.tabs {
+  display: flex;
+  gap: 0;
+  margin-left: 1.4rem;
+}
+
+.tab {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+
+.tab + .tab {
+  border-left: 0;
+}
+
+.tab:hover {
+  color: var(--ink);
+  background: rgba(22, 32, 42, 0.04);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--external);
+  outline-offset: -2px;
+}
+
+/* The selected tab takes the ink its dots are drawn in, so the control and
+   the marks on the chart are visibly the same claim. */
+.tab-on,
+.tab-on:hover {
+  background: var(--external);
+  border-color: var(--external);
+  color: #fff;
+}
+
+.tab-n {
+  font-weight: 400;
+  font-size: 0.66rem;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}

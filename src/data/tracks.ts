@@ -23,15 +23,40 @@ export interface TrackPoint {
 
 /**
  * TIME. Source logs may carry nanoseconds (KR's do: 1765950878172248064).
- * A nanosecond epoch does not survive a JS number — 1765950878172248064
- * becomes …248000 — so adapters must divide with BigInt, and this interface is
- * declared in milliseconds to put the conversion in one place and keep it out
- * of every consumer.
+ * A nanosecond epoch is past 2^53, so adapters divide on BigInt, and this
+ * interface is declared in milliseconds to keep the conversion in one place.
  *
  * Milliseconds are enough for a track: a 5 Hz GPS log has 200 ms between
  * fixes. If something later needs to join on the original stamp, that join
  * belongs on the full-precision value in the source, not on this.
  */
+
+/** The sensors a frame can come from. */
+export const SENSORS = ['camera', 'radar'] as const;
+export type SensorId = (typeof SENSORS)[number];
+
+export const SENSOR_LABELS: Record<SensorId, string> = {
+  camera: 'CAMERA',
+  radar: 'RADAR',
+};
+
+/**
+ * One place a sensor recorded something.
+ *
+ * NOT one frame. Frames arrive faster than the hull moves — camera at ~5 Hz
+ * against a 5 Hz GPS log — so drawing a dot per frame would stack dozens of
+ * identical circles on one pixel and make a dense stretch indistinguishable
+ * from a sparse one. Each dot is a GPS FIX that has at least one frame matched
+ * to it, and `n` says how many. The map can then show density honestly.
+ */
+export interface FrameDot {
+  lon: number;
+  lat: number;
+  /** The fix's time, epoch ms. */
+  t: number;
+  /** Frames matched to this fix. */
+  n: number;
+}
 
 export interface Track {
   /** Stable, unique across a TrackSet. Used as the MapLibre feature id. */
@@ -51,6 +76,22 @@ export interface Track {
   /** Which hull — ownship, target A, and so on. */
   vessel: string;
   points: TrackPoint[];
+  /**
+   * Frame positions per sensor, already matched to fixes by the adapter.
+   *
+   * Empty arrays are meaningful and are not the same as a missing key: they
+   * say the adapter looked and found no frames, which is a fact about the
+   * session rather than about this file.
+   */
+  frames: Record<SensorId, FrameDot[]>;
+  /**
+   * Frames the adapter could NOT place, per sensor.
+   *
+   * A frame whose nearest fix is further away in time than the tolerance gets
+   * no position at all. Counting them is the point: silently dropping them
+   * would make a session with a broken GPS look like a session with no camera.
+   */
+  unmatched: Record<SensorId, number>;
 }
 
 /** A source that was found but produced no track, and why. */
@@ -61,7 +102,7 @@ export interface ExcludedTrack {
 
 export interface TrackSet {
   /** Bumped when the shape changes, so a stale file fails loudly. */
-  version: 1;
+  version: 2;
   /** ISO 8601, when the adapter ran. */
   generatedAt: string;
   /** What produced this file, for the same reason `source` exists. */
@@ -69,15 +110,13 @@ export interface TrackSet {
   tracks: Track[];
   /**
    * NOT an error list. Sessions the adapter deliberately did not draw, each
-   * with its reason — two of the five KR sessions carry no navsat log at all.
-   * Silently rendering three of five would misreport the corpus; the UI shows
-   * this count, so the absence is on screen rather than inferred.
+   * with its reason. Silently rendering a subset would misreport the corpus.
    */
   excluded: ExcludedTrack[];
 }
 
 export const EMPTY_TRACK_SET: TrackSet = {
-  version: 1,
+  version: 2,
   generatedAt: '',
   generator: '',
   tracks: [],
@@ -105,9 +144,8 @@ export function spanMetres(track: Track): number {
  * Whether a track is a vessel that stayed put.
  *
  * 25 m over the whole log: wider than GPS scatter at anchor (metres), far
- * narrower than the shortest real transit here (670 m). Named rather than
- * inlined because it changes what the hover card says, and a reader deserves
- * to see the number that decided it.
+ * narrower than the shortest real transit here (hundreds of metres). Named
+ * rather than inlined because it changes what the hover card says.
  */
 export const MOORED_SPAN_M = 25;
 
@@ -124,6 +162,11 @@ export function durationS(track: Track): number {
   return Math.max(0, (last.t - first.t) / 1000);
 }
 
+/** Total frames of one sensor across a track. */
+export function frameCount(track: Track, sensor: SensorId): number {
+  return (track.frames[sensor] ?? []).reduce((a, d) => a + d.n, 0);
+}
+
 /**
  * Parse a TrackSet from whatever the fetch returned.
  *
@@ -136,17 +179,26 @@ export function parseTrackSet(raw: unknown): TrackSet {
     throw new Error('track set: not an object');
   }
   const o = raw as Record<string, unknown>;
-  if (o['version'] !== 1) {
-    throw new Error(`track set: unsupported version ${String(o['version'])}`);
+  if (o['version'] !== 2) {
+    throw new Error(
+      `track set: unsupported version ${String(o['version'])} — re-run the adapter`,
+    );
   }
   if (!Array.isArray(o['tracks'])) {
     throw new Error('track set: `tracks` is not an array');
   }
   return {
-    version: 1,
+    version: 2,
     generatedAt: String(o['generatedAt'] ?? ''),
     generator: String(o['generator'] ?? ''),
-    tracks: o['tracks'] as Track[],
+    tracks: (o['tracks'] as Track[]).map((t) => ({
+      ...t,
+      // Tolerate a track written before frames existed rather than throwing:
+      // the version gate above already rejects an incompatible file, and this
+      // keeps one missing key from emptying the whole chart.
+      frames: { ...{ camera: [], radar: [] }, ...t.frames },
+      unmatched: { ...{ camera: 0, radar: 0 }, ...t.unmatched },
+    })),
     excluded: Array.isArray(o['excluded']) ? (o['excluded'] as ExcludedTrack[]) : [],
   };
 }
@@ -174,18 +226,24 @@ export function tracksToGeoJSON(tracks: readonly Track[]): {
           type: 'LineString' as const,
           coordinates: t.points.map((p) => [p.lon, p.lat] as [number, number]),
         },
-        properties: {
-          id: t.id,
-          label: t.label,
-          source: t.source,
-          sourceNote: t.sourceNote ?? '',
-          vessel: t.vessel,
-          fixes: t.points.length,
-          seconds: Math.round(durationS(t)),
-          spanM: Math.round(spanMetres(t)),
-          moored: isMoored(t),
-        },
+        properties: trackProps(t),
       })),
+  };
+}
+
+function trackProps(t: Track): Record<string, string | number | boolean> {
+  return {
+    id: t.id,
+    label: t.label,
+    source: t.source,
+    sourceNote: t.sourceNote ?? '',
+    vessel: t.vessel,
+    fixes: t.points.length,
+    seconds: Math.round(durationS(t)),
+    spanM: Math.round(spanMetres(t)),
+    moored: isMoored(t),
+    camera: frameCount(t, 'camera'),
+    radar: frameCount(t, 'radar'),
   };
 }
 
@@ -193,7 +251,7 @@ export function tracksToGeoJSON(tracks: readonly Track[]): {
  * One point per track, at its first fix.
  *
  * A moored vessel's "track" is a metre of GPS scatter — at chart zoom that is
- * a sub-pixel line, i.e. invisible. Without this, two of the three KR sessions
+ * a sub-pixel line, i.e. invisible. Without this, every stationary session
  * would simply not appear, and the chart would under-report the corpus while
  * looking complete.
  */
@@ -215,18 +273,41 @@ export function trackHeadsToGeoJSON(tracks: readonly Track[]): {
         type: 'Feature' as const,
         id: `${t.id}:head`,
         geometry: { type: 'Point' as const, coordinates: [p.lon, p.lat] as [number, number] },
+        properties: trackProps(t),
+      }];
+    }),
+  };
+}
+
+/**
+ * Every place the chosen sensor recorded, across every track.
+ *
+ * One feature per matched fix, carrying its frame count and the session it
+ * belongs to, so a dot can be hovered and named like anything else here.
+ */
+export function framesToGeoJSON(tracks: readonly Track[], sensor: SensorId): {
+  type: 'FeatureCollection';
+  features: {
+    type: 'Feature';
+    geometry: { type: 'Point'; coordinates: [number, number] };
+    properties: Record<string, string | number | boolean>;
+  }[];
+} {
+  return {
+    type: 'FeatureCollection',
+    features: tracks.flatMap((t) =>
+      (t.frames[sensor] ?? []).map((d) => ({
+        type: 'Feature' as const,
+        geometry: { type: 'Point' as const, coordinates: [d.lon, d.lat] as [number, number] },
         properties: {
-          id: t.id,
           label: t.label,
           source: t.source,
           sourceNote: t.sourceNote ?? '',
-          vessel: t.vessel,
-          fixes: t.points.length,
-          seconds: Math.round(durationS(t)),
-          spanM: Math.round(spanMetres(t)),
-          moored: isMoored(t),
+          sensor,
+          n: d.n,
+          t: d.t,
         },
-      }];
-    }),
+      })),
+    ),
   };
 }

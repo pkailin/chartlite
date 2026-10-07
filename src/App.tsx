@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
 import Chart from './map/Chart';
-import { EMPTY_TRACK_SET, parseTrackSet, type TrackSet } from './data/tracks';
+import {
+  EMPTY_TRACK_SET,
+  SENSORS,
+  SENSOR_LABELS,
+  frameCount,
+  parseTrackSet,
+  type SensorId,
+  type TrackSet,
+} from './data/tracks';
 
 /** Injected by Vite at build time — see BUILD_ID in vite.config.ts. */
 declare const __BUILD_ID__: string;
@@ -34,6 +42,12 @@ const TRACKS_URL = `./tracks.json?b=${__BUILD_ID__}`;
 export default function App() {
   const [set, setSet] = useState<TrackSet>(EMPTY_TRACK_SET);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * RADAR first in SENSORS order, camera selected. The order is the sentence
+   * "radar and camera"; the default is camera because it is the denser of the
+   * two, so the first thing on screen shows the fullest picture.
+   */
+  const [sensor, setSensor] = useState<SensorId>('camera');
 
   useEffect(() => {
     let live = true;
@@ -64,9 +78,28 @@ export default function App() {
       <header className="bar">
         <span className="bar-name">CHARTLITE</span>
         <span className="bar-where">Singapore Strait</span>
+
+        {/* One sensor at a time. Switching swaps a source, never the camera
+            position — see the frame effect in map/Chart.tsx. */}
+        <nav className="tabs" aria-label="Sensor">
+          {SENSORS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              className={`tab${id === sensor ? ' tab-on' : ''}`}
+              aria-pressed={id === sensor}
+              onClick={() => { setSensor(id); }}
+            >
+              {SENSOR_LABELS[id]}
+              <span className="tab-n">
+                {set.tracks.reduce((a, t) => a + frameCount(t, id), 0).toLocaleString()}
+              </span>
+            </button>
+          ))}
+        </nav>
       </header>
       <main className="stage">
-        <Chart tracks={set.tracks} />
+        <Chart tracks={set.tracks} sensor={sensor} />
         {error !== null && (
           <div className="load-error" role="alert">
             Could not load tracks: {error}

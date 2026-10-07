@@ -15,6 +15,8 @@ function track(points: { lon: number; lat: number; t: number }[], over: Partial<
     id: 'kr:S', label: 'S', source: 'KR AIC', sourceNote: 'no licence',
     vessel: 'ownship',
     points: points.map((p) => ({ ...p, heading: null })),
+    frames: { camera: [], radar: [] },
+    unmatched: { camera: 0, radar: 0 },
     ...over,
   };
 }
@@ -99,17 +101,17 @@ describe('what reaches the map', () => {
 
 describe('parseTrackSet', () => {
   it('rejects an unknown version rather than rendering an empty chart', () => {
-    expect(() => parseTrackSet({ version: 2, tracks: [] })).toThrow(/version/);
+    expect(() => parseTrackSet({ version: 3, tracks: [] })).toThrow(/version/);
   });
 
   it('rejects a malformed file', () => {
     expect(() => parseTrackSet(null)).toThrow();
-    expect(() => parseTrackSet({ version: 1 })).toThrow(/tracks/);
+    expect(() => parseTrackSet({ version: 2 })).toThrow(/tracks/);
   });
 
   it('keeps the excluded list, which is data and not an error', () => {
     const set = parseTrackSet({
-      version: 1, generatedAt: '', generator: '', tracks: [],
+      version: 2, generatedAt: '', generator: '', tracks: [],
       excluded: [{ id: 'S5_2512161519', reason: 'no navsat_log.json' }],
     });
     expect(set.excluded).toHaveLength(1);
