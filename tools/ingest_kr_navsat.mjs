@@ -1,14 +1,24 @@
 /**
  * Adapter: KR AIC field-collection layout → the neutral track set.
  *
- *   node tools/ingest_kr_navsat.mjs "<Labeled Dataset>" [--out public/tracks.json]
+ *   node tools/ingest_kr_navsat.mjs <source> [--out FILE] [--mirror DIR]
+ *
+ * `<source>` is either a local directory or an `https://` URL. Both carry the
+ * SAME layout — `<root>/<session>/navsat_log.json` — so the parsing below is
+ * written once and the transport is swapped underneath it.
+ *
+ *   # the RAW dataset on KR's host: all 23 sessions, untruncated
+ *   node tools/ingest_kr_navsat.mjs "https://…/RealDataset/"
+ *
+ *   # a local copy. NOTE the extra rawdata/ level in the Labeled Dataset
+ *   node tools/ingest_kr_navsat.mjs "/media/…/Labeled Dataset/rawdata"
  *
  * THIS IS THE ONLY FILE THAT KNOWS WHAT KR'S LAYOUT LOOKS LIKE. The map draws
  * `src/data/tracks.ts`'s shape and nothing else, so the next corpus gets its
  * own adapter beside this one and changes nothing downstream. If a new format
  * ever makes you want to edit the map, the adapter is in the wrong place.
  *
- * What it reads: `rawdata/<session>/navsat_log.json`, an array of
+ * What it reads, per session:
  *
  *     {"gps":{"altitude":9.57,"latitude":1.216,"longitude":103.855,"heading":92},
  *      "timestamp":1765950878172248064}
@@ -16,25 +26,36 @@
  * Four rules, each of which exists because the alternative silently produces a
  * plausible wrong answer:
  *
- * 1. NANOSECONDS VIA BIGINT. `timestamp` is a nanosecond epoch. Through a JS
- *    number 1765950878172248064 becomes …248000, so the division to
- *    milliseconds is done on BigInt and never on the parsed float. (JSON.parse
- *    has already rounded it, so the raw text is re-read for the stamp.)
+ * 1. NANOSECONDS VIA BIGINT. `timestamp` is a nanosecond epoch, past 2^53, so
+ *    the parsed float is granular to a few hundred nanoseconds. Measured over
+ *    all 40,814 stamps in this corpus the naive `Math.floor(n / 1e6)` agrees
+ *    with the exact value 40,811 times and rounds a millisecond UP on 3 — each
+ *    landing a nanosecond below a millisecond boundary. 1 in 13,600 is not a
+ *    crisis and is also not worth leaving to chance in a stamp a later join may
+ *    key on, so the division is done on BigInt, re-reading the raw text because
+ *    JSON.parse has already rounded by the time a value reaches an object.
  *
  * 2. NEVER INVENT A POSITION. A fix without finite lat/lon is dropped, not
  *    defaulted. Exactly (0, 0) is refused outright — Null Island is what a GPS
  *    receiver with no lock reports, not a place off Singapore.
  *
- * 3. A SESSION WITH NO navsat_log.json IS REPORTED, NOT SKIPPED. Two of KR's
- *    five sessions carry only camera and radar. Emitting three tracks and
- *    saying nothing would misreport the corpus as complete.
+ * 3. A SESSION WITHOUT A LOG IS REPORTED, NOT SKIPPED. Emitting the sessions
+ *    that worked and saying nothing about the rest misreports the corpus as
+ *    complete.
  *
  * 4. NO LICENCE TRAVELS WITH THIS DATA. Every track carries the caveat to the
  *    screen, and the output path is gitignored — see the note by DEFAULT_OUT.
+ *
+ * ON READING FROM THE HOST. KR's share is served from a revocable
+ * hash-token host; it can stop answering without notice and nothing here can
+ * prevent that. `--mirror DIR` writes each log to disk as it is fetched, so a
+ * run that worked once can be repeated from the copy. Use it.
  */
-import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from 'node:fs';
+import {
+  readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, realpathSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -54,6 +75,85 @@ const SOURCE_NOTE =
   'KR AIC field collection, Dec 2025 — no licence granted, revocable host. '
   + 'Reference only: not our sensors, and not coverage evidence.';
 
+const LOG_NAME = 'navsat_log.json';
+
+/** Per-request ceiling. A hung socket must not stall a 23-session run. */
+const REQUEST_TIMEOUT_MS = 60_000;
+
+/** Concurrent fetches. Low on purpose: this is someone else's server. */
+const CONCURRENCY = 4;
+
+/** Directory entries that are not sessions. `@eaDir` is a Synology artifact. */
+const NOT_A_SESSION = /^(@eaDir|\.|\.\.)$/;
+
+/* ── Transports ─────────────────────────────────────────────────────────────
+ *
+ * Two implementations of the same two questions — what sessions are there, and
+ * what is in this one's log — so everything below them is transport-blind.
+ */
+
+function localSource(root) {
+  const base = resolve(root);
+  if (!existsSync(base)) {
+    throw new Error(`no such directory: ${base}`);
+  }
+  return {
+    describe: base,
+    listSessions() {
+      return readdirSync(base, { withFileTypes: true })
+        .filter((d) => d.isDirectory() && !NOT_A_SESSION.test(d.name))
+        .map((d) => d.name)
+        .sort();
+    },
+    readLog(session) {
+      const file = join(base, session, LOG_NAME);
+      return existsSync(file) ? readFileSync(file, 'utf8') : null;
+    },
+  };
+}
+
+function httpSource(rootUrl) {
+  // A trailing slash is load-bearing for relative resolution: without it the
+  // last path segment is replaced rather than appended, and every request goes
+  // to the parent directory.
+  const base = rootUrl.endsWith('/') ? rootUrl : `${rootUrl}/`;
+
+  async function get(url) {
+    const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`HTTP ${String(res.status)} for ${url}`);
+    return res.text();
+  }
+
+  return {
+    describe: base,
+    async listSessions() {
+      const html = await get(base);
+      if (html === null) throw new Error(`no listing at ${base}`);
+      /*
+       * An Apache-style index. Only hrefs ending in `/` are directories, and
+       * anything containing `:` or starting with `/` is a link off this page
+       * (sort links, the parent, absolute paths) rather than a child.
+       */
+      const names = [...html.matchAll(/<a\s+href="([^"]+)"/gi)]
+        .map((m) => m[1])
+        .filter((h) => h.endsWith('/') && !h.startsWith('/') && !h.includes(':') && h !== '../')
+        .map((h) => decodeURIComponent(h.slice(0, -1)))
+        .filter((n) => !NOT_A_SESSION.test(n));
+      return [...new Set(names)].sort();
+    },
+    async readLog(session) {
+      return get(`${base}${encodeURIComponent(session)}/${LOG_NAME}`);
+    },
+  };
+}
+
+function sourceFor(arg) {
+  return /^https?:\/\//i.test(arg) ? httpSource(arg) : localSource(arg);
+}
+
+/* ── Parsing ────────────────────────────────────────────────────────────── */
+
 /** A finite number that is not a boolean. */
 function finite(v) {
   return typeof v === 'number' && Number.isFinite(v);
@@ -63,9 +163,7 @@ function finite(v) {
  * Nanosecond epoch → milliseconds, without going through a float.
  *
  * Takes the ORIGINAL TEXT of the stamp, because JSON.parse has already rounded
- * the value by the time it reaches an object. Falls back to the parsed number
- * when the text form cannot be found, which costs ~microseconds of precision —
- * irrelevant for drawing, and the fallback is reported rather than silent.
+ * the value by the time it reaches an object.
  */
 function nsTextToMs(text) {
   try {
@@ -80,65 +178,60 @@ function rawStamps(json) {
   return [...json.matchAll(/"timestamp"\s*:\s*(\d+)/g)].map((m) => m[1]);
 }
 
-function readSession(dir, sessionId) {
-  const file = join(dir, 'navsat_log.json');
-  if (!existsSync(file)) {
+/** One session's log text → a track, or an exclusion with its reason. */
+export function parseNavsat(sessionId, text) {
+  if (text === null) {
     return {
       track: null,
-      excluded: {
-        id: sessionId,
-        reason: 'no navsat_log.json — camera and radar only, so there is no position to draw',
-      },
+      excluded: { id: sessionId, reason: `no ${LOG_NAME} — nothing to draw` },
+      dropped: 0,
     };
   }
 
-  const text = readFileSync(file, 'utf8');
-  const rows = JSON.parse(text);
-  if (!Array.isArray(rows)) {
-    return { track: null, excluded: { id: sessionId, reason: 'navsat_log.json is not an array' } };
+  let rows;
+  try {
+    rows = JSON.parse(text);
+  } catch (e) {
+    return {
+      track: null,
+      excluded: { id: sessionId, reason: `${LOG_NAME} is not valid JSON: ${e.message}` },
+      dropped: 0,
+    };
   }
-  const stamps = rawStamps(text);
+  if (!Array.isArray(rows)) {
+    return {
+      track: null,
+      excluded: { id: sessionId, reason: `${LOG_NAME} is not an array` },
+      dropped: 0,
+    };
+  }
 
+  const stamps = rawStamps(text);
   const points = [];
-  let droppedNoFix = 0;
-  let droppedNullIsland = 0;
-  let droppedNoTime = 0;
+  let noFix = 0, nullIsland = 0, noTime = 0;
 
   rows.forEach((row, i) => {
     const gps = row?.gps;
     const lat = gps?.latitude;
     const lon = gps?.longitude;
 
-    if (!finite(lat) || !finite(lon)) { droppedNoFix++; return; }
+    if (!finite(lat) || !finite(lon)) { noFix++; return; }
     // Rule 2. A receiver with no lock reports exactly this.
-    if (lat === 0 && lon === 0) { droppedNullIsland++; return; }
+    if (lat === 0 && lon === 0) { nullIsland++; return; }
 
     const stamp = stamps[i];
     const t = stamp === undefined ? null : nsTextToMs(stamp);
-    if (t === null) { droppedNoTime++; return; }
+    if (t === null) { noTime++; return; }
 
-    points.push({
-      lon,
-      lat,
-      t,
-      heading: finite(gps?.heading) ? gps.heading : null,
-    });
+    points.push({ lon, lat, t, heading: finite(gps?.heading) ? gps.heading : null });
   });
 
   if (points.length === 0) {
     return {
       track: null,
-      excluded: { id: sessionId, reason: 'navsat_log.json held no usable fix' },
+      excluded: { id: sessionId, reason: `${LOG_NAME} held no usable fix` },
+      dropped: noFix + nullIsland + noTime,
     };
-  }
-
-  const dropped = droppedNoFix + droppedNullIsland + droppedNoTime;
-  if (dropped > 0) {
-    console.warn(
-      `  ${sessionId}: dropped ${dropped} fix(es) — `
-      + `${droppedNoFix} without a position, ${droppedNullIsland} at (0,0), `
-      + `${droppedNoTime} without a readable stamp`,
-    );
   }
 
   return {
@@ -151,61 +244,127 @@ function readSession(dir, sessionId) {
       points,
     },
     excluded: null,
+    dropped: noFix + nullIsland + noTime,
+    droppedDetail: { noFix, nullIsland, noTime },
   };
 }
 
-function main() {
+/* ── Run ────────────────────────────────────────────────────────────────── */
+
+/** Map over `items` with at most `limit` in flight, preserving order. */
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      for (;;) {
+        const i = next++;
+        if (i >= items.length) return;
+        out[i] = await fn(items[i], i);
+      }
+    }),
+  );
+  return out;
+}
+
+async function main() {
   const args = process.argv.slice(2);
   const root = args.find((a) => !a.startsWith('--'));
   const outIdx = args.indexOf('--out');
   const out = outIdx >= 0 && args[outIdx + 1] ? resolve(args[outIdx + 1]) : DEFAULT_OUT;
+  const mirrorIdx = args.indexOf('--mirror');
+  const mirror = mirrorIdx >= 0 && args[mirrorIdx + 1] ? resolve(args[mirrorIdx + 1]) : null;
 
   if (!root) {
-    console.error('usage: node tools/ingest_kr_navsat.mjs "<Labeled Dataset dir>" [--out FILE]');
+    console.error('usage: node tools/ingest_kr_navsat.mjs <dir|url> [--out FILE] [--mirror DIR]');
     process.exit(2);
   }
 
-  const rawdata = join(resolve(root), 'rawdata');
-  if (!existsSync(rawdata)) {
-    console.error(`no rawdata/ under ${root}`);
-    console.error('expected <Labeled Dataset>/rawdata/<session>/navsat_log.json');
+  const src = sourceFor(root);
+  const sessions = await src.listSessions();
+  console.log(`${String(sessions.length)} session(s) at ${src.describe}`);
+  if (sessions.length === 0) {
+    console.error('no sessions found — is this the directory holding <session>/navsat_log.json?');
     process.exit(1);
   }
 
-  const sessions = readdirSync(rawdata, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => d.name)
-    .sort();
-
-  console.log(`reading ${String(sessions.length)} session(s) from ${rawdata}`);
+  const results = await mapLimit(sessions, CONCURRENCY, async (id) => {
+    let text;
+    try {
+      text = await src.readLog(id);
+    } catch (e) {
+      // A transport failure is NOT "this session has no log". Keeping them
+      // apart matters: one is a fact about the corpus, the other is a fact
+      // about tonight's network, and conflating them turns an outage into a
+      // permanent-looking gap.
+      return {
+        track: null,
+        excluded: { id, reason: `could not be read: ${e.message}` },
+        failed: true,
+      };
+    }
+    if (text !== null && mirror) {
+      const dir = join(mirror, id);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, LOG_NAME), text);
+    }
+    return parseNavsat(id, text);
+  });
 
   const tracks = [];
   const excluded = [];
-  for (const id of sessions) {
-    const { track, excluded: ex } = readSession(join(rawdata, id), id);
-    if (track) {
-      tracks.push(track);
-      console.log(`  ${id}: ${String(track.points.length)} fixes`);
-    } else if (ex) {
-      excluded.push(ex);
-      console.log(`  ${id}: EXCLUDED — ${ex.reason}`);
+  let failures = 0;
+
+  results.forEach((r, i) => {
+    const id = sessions[i];
+    if (r.track) {
+      tracks.push(r.track);
+      const d = r.dropped > 0 ? `  (dropped ${String(r.dropped)})` : '';
+      console.log(`  ${id}: ${String(r.track.points.length)} fixes${d}`);
+    } else if (r.excluded) {
+      excluded.push(r.excluded);
+      if (r.failed) failures++;
+      console.log(`  ${id}: EXCLUDED — ${r.excluded.reason}`);
     }
-  }
+  });
 
   const set = {
     version: 1,
     generatedAt: new Date().toISOString(),
-    generator: 'tools/ingest_kr_navsat.mjs',
+    generator: `tools/ingest_kr_navsat.mjs ${src.describe}`,
     tracks,
     excluded,
   };
 
   mkdirSync(dirname(out), { recursive: true });
-  writeFileSync(out, JSON.stringify(set, null, 2));
+  // Compact: this is machine-read generated data, and 23 sessions of 5 Hz
+  // fixes pretty-printed is several times the size for nobody's benefit.
+  writeFileSync(out, JSON.stringify(set));
+
+  const fixes = tracks.reduce((a, t) => a + t.points.length, 0);
   console.log(
     `\nwrote ${out}\n  ${String(tracks.length)} track(s), `
-    + `${String(excluded.length)} session(s) excluded`,
+    + `${fixes.toLocaleString()} fixes, ${String(excluded.length)} excluded`,
   );
+  if (mirror) console.log(`  mirrored logs to ${mirror}`);
+
+  /*
+   * A transport failure exits non-zero even though a usable file was written.
+   * The file is real and partial; a CI step or a shell `&&` must not read
+   * "some sessions could not be reached" as success.
+   */
+  if (failures > 0) {
+    console.error(`\n${String(failures)} session(s) could not be READ — this run is incomplete.`);
+    process.exit(1);
+  }
 }
 
-main();
+/*
+ * Importable for tests, executable as a script. `realpathSync` so a symlinked
+ * invocation still matches, and the comparison is on file URLs rather than on
+ * string suffixes, which match the wrong file for any path that happens to end
+ * the same way.
+ */
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
+  await main();
+}
