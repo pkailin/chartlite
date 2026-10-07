@@ -2,8 +2,18 @@ import { useEffect, useState } from 'react';
 import Chart from './map/Chart';
 import { EMPTY_TRACK_SET, parseTrackSet, type TrackSet } from './data/tracks';
 
-/** Written by an adapter under `tools/`, served from `public/`. */
-const TRACKS_URL = './tracks.json';
+/** Injected by Vite at build time — see BUILD_ID in vite.config.ts. */
+declare const __BUILD_ID__: string;
+
+/**
+ * Written by an adapter under `tools/`, served from `public/`.
+ *
+ * The build id in the query is load-bearing. An earlier build served this file
+ * with `immutable, max-age=31536000`, and a browser that stored it under that
+ * directive goes on honouring it for a year — it never asks again, so fixing
+ * the server header cannot reach it. A per-build URL has no poisoned entry.
+ */
+const TRACKS_URL = `./tracks.json?b=${__BUILD_ID__}`;
 
 /**
  * One tab, one chart.
