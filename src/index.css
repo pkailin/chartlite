@@ -1,0 +1,110 @@
+/*
+ * The whole stylesheet. One bar, one map, nothing else.
+ *
+ * No theme toggle and no dark palette: the chart is OpenStreetMap's raster
+ * ground, which is light and cannot be inverted without making the seamark
+ * overlay unreadable. A dark chrome around a light map reads as a bug. When a
+ * dark basemap exists that does not demand an API key, a theme becomes worth
+ * having; until then committing to the light one is the honest choice.
+ */
+
+:root {
+  --ink: #16202a;
+  --ink-dim: #5d7684;
+  --bar: #f2f5f6;
+  --rule: #c9d6dc;
+  --alarm: #9c3321;
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bar);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ── The bar ───────────────────────────────────────────────────────────── */
+
+.bar {
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+  flex: 0 0 auto;
+  padding: 0.55rem 0.9rem;
+  background: var(--bar);
+  border-bottom: 1px solid var(--rule);
+}
+
+.bar-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.bar-where {
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+}
+
+/* ── The map ───────────────────────────────────────────────────────────── */
+
+/*
+ * `min-height: 0` is load-bearing. A flex child defaults to min-height:auto,
+ * which refuses to shrink below its content — the map then grows past the
+ * viewport and the page scrolls instead of the chart filling it.
+ */
+.stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+}
+
+.chart {
+  position: absolute;
+  inset: 0;
+}
+
+/* ── The one failure state ─────────────────────────────────────────────── */
+
+.chart-failed {
+  padding: 2rem;
+  max-width: 34rem;
+}
+
+.chart-failed h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.6rem;
+  color: var(--alarm);
+}
+
+.chart-failed p {
+  margin: 0 0 0.7rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.chart-failed-detail {
+  font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  font-size: 0.78rem;
+  color: var(--ink-dim);
+  word-break: break-word;
+}
