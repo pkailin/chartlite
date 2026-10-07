@@ -15,6 +15,12 @@
   --rule: #c9d6dc;
   --alarm: #9c3321;
 
+  /* Ink for data that is NOT ours. One colour for every external corpus:
+     when our own captures are drawn here they get their own, and the
+     difference must be visible without reading a legend. Mirrors
+     EXTERNAL_INK in map/layers/trackLayer.ts. */
+  --external: #B5179E;
+
   color-scheme: light;
 }
 
@@ -107,4 +113,96 @@ body {
   font-size: 0.78rem;
   color: var(--ink-dim);
   word-break: break-word;
+}
+
+/* ── Bar statistics ────────────────────────────────────────────────────── */
+
+.bar-spacer {
+  flex: 1 1 auto;
+}
+
+.bar-stat {
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  color: var(--ink-dim);
+}
+
+.bar-stat b {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.bar-stat-dim {
+  color: var(--ink-dim);
+  opacity: 0.8;
+  border-bottom: 1px dotted var(--rule);
+  cursor: help;
+}
+
+.bar-stat-bad {
+  color: var(--alarm);
+}
+
+/* ── Hover card ────────────────────────────────────────────────────────── */
+
+/*
+ * Positioned off the pointer rather than centred on the feature: a card that
+ * covers what it describes makes you move the mouse to read it, which dismisses
+ * it. `pointer-events: none` for the same reason — the card must never become
+ * the hover target and fight the line underneath it.
+ */
+.hover-card {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  max-width: 17rem;
+  padding: 0.55rem 0.7rem;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--external);
+  box-shadow: 0 2px 10px rgba(22, 32, 42, 0.16);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+/* The source leads, in the ink the track is drawn in, so the card and the
+   line on the chart are visibly the same claim. */
+.hover-source {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--external);
+}
+
+.hover-label {
+  font-weight: 600;
+  font-size: 0.86rem;
+  margin-top: 0.1rem;
+  word-break: break-word;
+}
+
+.hover-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.05rem 0.6rem;
+  margin: 0.45rem 0 0;
+}
+
+.hover-facts dt {
+  color: var(--ink-dim);
+  font-size: 0.7rem;
+}
+
+.hover-facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.hover-note {
+  margin: 0.5rem 0 0;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.68rem;
+  color: var(--ink-dim);
 }

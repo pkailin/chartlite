@@ -1,3 +1,7 @@
 node_modules/
 dist/
 *.tsbuildinfo
+
+# Ingested data. KR carries NO LICENCE and is served from a revocable host —
+# positions derived from it must not be committed. Re-run tools/ingest_*.mjs.
+public/tracks.json

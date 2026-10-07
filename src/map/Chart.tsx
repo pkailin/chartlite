@@ -9,42 +9,63 @@ import {
   MIN_ZOOM,
   type LngLat,
 } from './view';
+import {
+  TRACK_HEAD_LAYER,
+  TRACK_HEAD_SOURCE,
+  TRACK_HIT_LAYER,
+  TRACK_LINE_LAYER,
+  TRACK_SOURCE,
+  formatDuration,
+  formatSpan,
+  hoverFrom,
+  trackHeadPaint,
+  trackHitPaint,
+  trackLinePaint,
+  type TrackHover,
+} from './layers/trackLayer';
+import { tracksToGeoJSON, trackHeadsToGeoJSON, type Track } from '../data/tracks';
 
 /**
  * The chart.
  *
  * THE ONE RULE THIS COMPONENT HOLDS: it fetches nothing. Everything it draws
- * arrives as props. Today that is only a camera position; when weather,
- * coverage or tracks land they arrive the same way, and this file does not
- * change. A map component that loads its own data has to be rewritten the
- * first time the data source moves, which is the whole reason this tool exists
- * as a fresh start rather than a fork.
+ * arrives as props. A map component that loads its own data has to be
+ * rewritten the first time the data source moves — and it moved on the first
+ * feature, when tracks arrived from an adapter rather than from an API.
  */
 export interface ChartProps {
   /** Opening centre. Defaults to mid-strait. */
   centre?: LngLat;
   /** Opening zoom. */
   zoom?: number;
+  /** Tracks to draw. Provenance-labelled; see `src/data/tracks.ts`. */
+  tracks?: readonly Track[];
 }
 
 export default function Chart({
   centre = DEFAULT_CENTRE,
   zoom = DEFAULT_ZOOM,
+  tracks = [],
 }: ChartProps) {
   const container = useRef<HTMLDivElement | null>(null);
   const map = useRef<maplibregl.Map | null>(null);
+  /** Whether the camera has already been moved to the data. See the fit below. */
+  const fitted = useRef(false);
+  const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
+  const [hover, setHover] = useState<TrackHover | null>(null);
+  const [hoverAt, setHoverAt] = useState<{ x: number; y: number } | null>(null);
 
   /*
-   * Built ONCE. `centre` and `zoom` are the opening camera, not a live binding
-   * — rebuilding the map on every prop change would throw away the user's own
+   * Built ONCE. `centre` and `zoom` are the opening camera, not a live
+   * binding — rebuilding on every prop change would throw away the user's own
    * pan and zoom, and recreating a GL context is expensive enough to see.
    */
   useEffect(() => {
     if (!container.current || map.current) return;
 
     try {
-      map.current = new maplibregl.Map({
+      const m = new maplibregl.Map({
         container: container.current,
         style: basemapStyle() as unknown as maplibregl.StyleSpecification,
         center: centre,
@@ -55,8 +76,10 @@ export default function Chart({
         // blurry chart beats a blank page, and this tool is read, not flown.
         canvasContextAttributes: { failIfMajorPerformanceCaveat: false },
       });
-      map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
-      map.current.addControl(new maplibregl.ScaleControl({ unit: 'nautical' }));
+      map.current = m;
+      m.addControl(new maplibregl.NavigationControl(), 'top-right');
+      m.addControl(new maplibregl.ScaleControl({ unit: 'nautical' }));
+      m.on('load', () => { setReady(true); });
     } catch (err) {
       /*
        * The constructor throws when there is no WebGL context — a headless
@@ -70,9 +93,103 @@ export default function Chart({
     return () => {
       map.current?.remove();
       map.current = null;
+      setReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- opening camera, deliberately not a live binding
   }, []);
+
+  /* Tracks. Sources are upserted so new data never rebuilds the map. */
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !ready) return;
+
+    const lines = tracksToGeoJSON(tracks) as unknown as GeoJSON.FeatureCollection;
+    const heads = trackHeadsToGeoJSON(tracks) as unknown as GeoJSON.FeatureCollection;
+
+    const lineSrc = m.getSource(TRACK_SOURCE) as maplibregl.GeoJSONSource | undefined;
+    if (lineSrc) lineSrc.setData(lines);
+    else m.addSource(TRACK_SOURCE, { type: 'geojson', data: lines });
+
+    const headSrc = m.getSource(TRACK_HEAD_SOURCE) as maplibregl.GeoJSONSource | undefined;
+    if (headSrc) headSrc.setData(heads);
+    else m.addSource(TRACK_HEAD_SOURCE, { type: 'geojson', data: heads });
+
+    /*
+     * ORDER: the wide transparent hit target goes UNDER the visible line, so
+     * it can never sit on top of the ink it exists to make pointable.
+     */
+    if (!m.getLayer(TRACK_HIT_LAYER)) {
+      m.addLayer({
+        id: TRACK_HIT_LAYER, type: 'line', source: TRACK_SOURCE,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: trackHitPaint(),
+      });
+    }
+    if (!m.getLayer(TRACK_LINE_LAYER)) {
+      m.addLayer({
+        id: TRACK_LINE_LAYER, type: 'line', source: TRACK_SOURCE,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: trackLinePaint(),
+      });
+    }
+    if (!m.getLayer(TRACK_HEAD_LAYER)) {
+      m.addLayer({
+        id: TRACK_HEAD_LAYER, type: 'circle', source: TRACK_HEAD_SOURCE,
+        paint: trackHeadPaint(),
+      });
+    }
+
+    /*
+     * Frame the data, ONCE.
+     *
+     * The opening view is the whole Strait, where a 670 m track is about nine
+     * pixels and the two moored sessions are a dot — you would open the tool
+     * and reasonably conclude nothing had been ingested. So the first time
+     * tracks arrive the camera goes to them.
+     *
+     * Once only, guarded by a ref: refitting on every data change would yank
+     * the view back from wherever the reader had panned to, which is worse
+     * than never fitting at all.
+     */
+    if (!fitted.current && tracks.length > 0) {
+      const b = new maplibregl.LngLatBounds();
+      for (const t of tracks) for (const p of t.points) b.extend([p.lon, p.lat]);
+      if (!b.isEmpty()) {
+        // maxZoom, because fitting two moored sessions a metre across would
+        // otherwise zoom to street level and lose all marine context.
+        m.fitBounds(b, { padding: 80, maxZoom: 15, duration: 0 });
+        fitted.current = true;
+      }
+    }
+
+    const show = (e: maplibregl.MapLayerMouseEvent) => {
+      const f = e.features?.[0];
+      const h = hoverFrom(f?.properties as Record<string, unknown> | undefined);
+      if (h) {
+        setHover(h);
+        setHoverAt({ x: e.point.x, y: e.point.y });
+        m.getCanvas().style.cursor = 'pointer';
+      }
+    };
+    const hide = () => {
+      setHover(null);
+      setHoverAt(null);
+      m.getCanvas().style.cursor = '';
+    };
+
+    // Both the hit line and the head, so a moored session — whose line is
+    // sub-pixel — is hoverable through its dot.
+    for (const id of [TRACK_HIT_LAYER, TRACK_HEAD_LAYER]) {
+      m.on('mousemove', id, show);
+      m.on('mouseleave', id, hide);
+    }
+    return () => {
+      for (const id of [TRACK_HIT_LAYER, TRACK_HEAD_LAYER]) {
+        m.off('mousemove', id, show);
+        m.off('mouseleave', id, hide);
+      }
+    };
+  }, [ready, tracks]);
 
   if (failed !== null) {
     return (
@@ -87,5 +204,28 @@ export default function Chart({
     );
   }
 
-  return <div className="chart" ref={container} data-testid="chart" />;
+  return (
+    <div className="chart" ref={container} data-testid="chart">
+      {hover && hoverAt && (
+        <div
+          className="hover-card"
+          data-testid="hover-card"
+          style={{ left: hoverAt.x + 14, top: hoverAt.y + 14 }}
+        >
+          {/* The source leads. A position on a chart with no provenance is
+              indistinguishable from one we measured. */}
+          <div className="hover-source">{hover.source}</div>
+          <div className="hover-label">{hover.label}</div>
+          <dl className="hover-facts">
+            <dt>vessel</dt><dd>{hover.vessel}</dd>
+            <dt>fixes</dt><dd>{hover.fixes.toLocaleString()}</dd>
+            <dt>duration</dt><dd>{formatDuration(hover.seconds)}</dd>
+            <dt>travelled</dt>
+            <dd>{hover.moored ? `${formatSpan(hover.spanM)} — moored` : formatSpan(hover.spanM)}</dd>
+          </dl>
+          {hover.sourceNote && <p className="hover-note">{hover.sourceNote}</p>}
+        </div>
+      )}
+    </div>
+  );
 }
