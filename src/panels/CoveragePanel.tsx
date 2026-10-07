@@ -20,8 +20,6 @@ export interface CoveragePanelProps {
 const AXIS_TITLES: Record<string, string> = {
   wind: 'Wind',
   rain: 'Rain',
-  illumination: 'Illumination',
-  glint: 'Sun glint',
   bin: 'Time of day',
 };
 
@@ -33,9 +31,11 @@ const AXIS_TITLES: Record<string, string> = {
  * way to know that seven more were considered and found unreachable.
  */
 const ABSENT: { axis: string; why: string }[] = [
+  { axis: 'illumination', why: 'recorded by hand' },
+  { axis: 'sun glare', why: 'recorded by hand — needs camera FOV' },
   { axis: 'visibility', why: 'no source — NEA publishes none' },
-  { axis: 'traffic density', why: 'needs AIS (key-gated)' },
-  { axis: 'vessel scale', why: 'needs AIS (key-gated)' },
+  { axis: 'traffic density', why: 'no historical AIS exists' },
+  { axis: 'vessel scale', why: 'no historical AIS exists' },
   { axis: 'depth', why: 'bathymetry source unreachable' },
   { axis: 'waterway', why: 'not yet built' },
   { axis: 'shore proximity', why: 'not yet built' },

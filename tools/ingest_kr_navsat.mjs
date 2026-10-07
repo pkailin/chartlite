@@ -57,8 +57,7 @@ import {
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
-  AXES, BANDS, BAND_LABELS,
-  binOf, glintBand, illuminationBand, rainBand, rainMmPerH, sunPosition, windBand,
+  AXES, BANDS, BAND_LABELS, binOf, rainBand, rainMmPerH, windBand,
 } from './odd.mjs';
 import { fetchDay, makeReader } from './nea.mjs';
 
@@ -403,13 +402,8 @@ export function corpusDays(tracks) {
  * for a dot that exists.
  */
 export function conditionDots(track, readers) {
-  const byT = new Map(track.points.map((p) => [p.t, p]));
-
   for (const sensor of Object.keys(SENSOR_DIRS)) {
     for (const dot of track.frames[sensor]) {
-      const fix = byT.get(dot.t);
-      const sun = sunPosition(dot.t, dot.lat, dot.lon);
-
       const wind = readers.wind(dot.t, dot.lat, dot.lon);
       const rain = readers.rain(dot.t, dot.lat, dot.lon);
 
@@ -419,8 +413,6 @@ export function conditionDots(track, readers) {
         // in mm/h. Converting here, once, is the whole reason rainMmPerH is a
         // named function rather than a literal 12.
         rain === null ? null : rainBand(rainMmPerH(rain.value)),
-        illuminationBand(sun.elevation),
-        glintBand(fix?.heading ?? NaN, sun.azimuth),
         binOf(dot.t),
       ];
     }

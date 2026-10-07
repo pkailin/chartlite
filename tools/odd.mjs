@@ -1,7 +1,7 @@
 /**
  * The ODD axes this tool can actually measure, and the maths behind them.
  *
- * Five axes, chosen because each can be derived from data in hand rather than
+ * Three axes, each derived from data in hand rather than
  * guessed. The band EDGES match ISO 34503 as the fleet's dataviz package reads
  * them, so a figure here and a figure there mean the same thing — that is the
  * only reason to copy numbers between two packages, and it is a good one.
@@ -30,15 +30,19 @@
 
 /**
  * Ordered band ids per axis. ORDER IS THE WIRE FORMAT: the adapter writes the
- * INDEX into these arrays, not the name, which turns five strings per dot into
- * five small integers and keeps a 40,000-dot file to megabytes rather than
+ * INDEX into these arrays, not the name, which turns a string per axis per dot
+ * into a small integer and keeps a 40,000-dot file to megabytes rather than
  * tens of them. The arrays travel in the output so it stays self-describing.
+ *
+ * THESE KEYS AND THE VECTOR WRITTEN BY conditionDots MUST AGREE, in count and
+ * in order. They disagreed once — two axes were dropped from the vector while
+ * these tables still listed them — and the result was not an error but a
+ * SHIFT: every dot's bin index was read as its illumination, and the last two
+ * axes read 100% unknown. Nothing threw. `odd.test.ts` now pins the length.
  */
 export const BANDS = {
   wind: ['calm', 'moderate', 'fresh', 'strong'],
   rain: ['dry', 'light', 'moderate_rain', 'heavy'],
-  illumination: ['night', 'twilight', 'low_sun', 'high_sun'],
-  glint: ['specular', 'oblique', 'clear_of_sun'],
   bin: ['00–04', '04–08', '08–12', '12–16', '16–20', '20–24'],
 };
 
@@ -46,8 +50,6 @@ export const BANDS = {
 export const BAND_LABELS = {
   wind: ['Calm (<5 kn)', 'Moderate (5–15 kn)', 'Fresh (15–25 kn)', 'Strong (>25 kn)'],
   rain: ['Dry (<0.2 mm/h)', 'Light (0.2–4 mm/h)', 'Moderate (4–10 mm/h)', 'Heavy (>10 mm/h)'],
-  illumination: ['Night (<−6°)', 'Twilight (−6…0°)', 'Low sun (0–15°)', 'High sun (>15°)'],
-  glint: ['Into the glint (<30°)', 'Oblique (30–90°)', 'Clear of sun (>90°)'],
   bin: ['00–04', '04–08', '08–12', '12–16', '16–20', '20–24'],
 };
 
@@ -182,14 +184,6 @@ export function sunPosition(ms, latDeg, lonDeg) {
   return { elevation: 90 - zenith, azimuth: (azimuth + 360) % 360 };
 }
 
-/** Solar elevation in degrees → illumination band index. */
-export function illuminationBand(elevationDeg) {
-  if (!Number.isFinite(elevationDeg)) return UNKNOWN;
-  if (elevationDeg < -6) return 0;
-  if (elevationDeg < 0) return 1;
-  if (elevationDeg < 15) return 2;
-  return 3;
-}
 
 /**
  * Smallest angle between two compass bearings, 0–180°.
@@ -208,28 +202,14 @@ export function bearingDelta(a, b) {
   return Math.abs(((a - b) % 360 + 540) % 360 - 180);
 }
 
-/**
- * Glint: how close the camera was to looking into the sun.
+/*
+ * sunPosition and bearingDelta are kept though nothing bands on them now.
  *
- * The relative azimuth between the hull's heading — which is where the forward
- * camera points — and the sun's bearing. Below 30° the lens is into the
- * specular path off the water, which is the condition that blinds a detector;
- * beyond 90° the sun is behind.
- *
- * ELEVATION IS NOT PART OF THE BAND, on purpose. The taxonomy's unit is
- * "° relative azimuth" and nothing else, so folding elevation in here would
- * make this package's `specular` mean something different from everyone
- * else's. Read it beside `illumination`, which carries the elevation: specular
- * AND low_sun together is the bad case, and keeping them separate is what lets
- * you ask for that combination.
- *
- * Returns UNKNOWN when there is no heading. A hull with no heading has no
- * camera bearing, and assuming one would invent the axis.
+ * They are the two primitives a real backlight measure needs — sun elevation,
+ * sun azimuth, and the angle from the camera to it — and they are correct and
+ * tested. What is missing is not the maths but the camera's VERTICAL FIELD OF
+ * VIEW, which the KR share does not state: without it there is no honest way
+ * to say whether a sun at 12 degrees was in frame. Keeping these here means
+ * that gap is a stated assumption away from being closed, rather than a
+ * rewrite.
  */
-export function glintBand(headingDeg, sunAzimuthDeg) {
-  if (!Number.isFinite(headingDeg) || !Number.isFinite(sunAzimuthDeg)) return UNKNOWN;
-  const rel = bearingDelta(headingDeg, sunAzimuthDeg);
-  if (rel < 30) return 0;
-  if (rel < 90) return 1;
-  return 2;
-}

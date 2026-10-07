@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BANDS, bearingDelta, binOf, glintBand, illuminationBand,
-  rainBand, rainMmPerH, sunPosition, windBand,
+  AXES, BAND_LABELS, BANDS, bearingDelta, binOf, rainBand, rainMmPerH,
+  sunPosition, windBand,
 } from '../tools/odd.mjs';
 
 /**
@@ -17,6 +17,25 @@ function band(axis: keyof typeof BANDS, i: number | null): string {
   if (i === null) throw new Error(`expected a band, got unknown`);
   return BANDS[axis][i] as string;
 }
+
+/*
+ * THE SHIFT THIS PREVENTS. The band tables and the vector conditionDots writes
+ * must agree in count and order. They disagreed once — two axes were dropped
+ * from the vector while the tables still listed them — and nothing threw:
+ * every dot's time-of-day index was read as its illumination, and the last two
+ * axes reported 100% unknown. A silent re-labelling, not an error.
+ */
+describe('the axis contract', () => {
+  it('lists exactly the axes the adapter writes', () => {
+    expect(AXES).toEqual(['wind', 'rain', 'bin']);
+  });
+
+  it('has a label row for every band of every axis', () => {
+    for (const axis of AXES as (keyof typeof BANDS)[]) {
+      expect(BAND_LABELS[axis]).toHaveLength(BANDS[axis].length);
+    }
+  });
+});
 
 describe('weather bands', () => {
   it('bands wind at the ISO 34503 edges', () => {
@@ -53,6 +72,13 @@ describe('weather bands', () => {
   });
 });
 
+/*
+ * sunPosition no longer feeds a band — illumination and glint were removed,
+ * because each was only half of the backlight question anyone actually asks.
+ * It is still tested: it is the primitive a real backlight measure will need
+ * once a camera field of view is stated, and an untested primitive sitting
+ * unused is how a correct function quietly rots.
+ */
 describe('the sun', () => {
   /*
    * Checked against arithmetic that does not go through this code: solar noon
@@ -79,47 +105,21 @@ describe('the sun', () => {
     expect(pm.azimuth).toBeGreaterThan(180);
   });
 
-  it('knows it is night', () => {
-    const s = sunPosition(Date.UTC(2025, 11, 17, 16, 0), 1.25, 103.85);   // 00:00 SGT
-    expect(s.elevation).toBeLessThan(-6);
-    expect(band('illumination', illuminationBand(s.elevation))).toBe('night');
-  });
-
-  it('bands illumination at the civil-twilight edges', () => {
-    expect(band('illumination', illuminationBand(-10))).toBe('night');
-    expect(band('illumination', illuminationBand(-3))).toBe('twilight');
-    expect(band('illumination', illuminationBand(5))).toBe('low_sun');
-    expect(band('illumination', illuminationBand(40))).toBe('high_sun');
-  });
 });
 
-describe('glint', () => {
+/*
+ * bearingDelta no longer feeds a band either, and is tested for the same
+ * reason as sunPosition: it is the other primitive a backlight measure needs,
+ * and it is the function that was WRONG once — it returned the supplement, so
+ * a camera pointing at the sun scored 180. An untested kept function is how
+ * that comes back.
+ */
+describe('bearingDelta', () => {
   it('measures the short way round the compass', () => {
     expect(bearingDelta(10, 350)).toBe(20);
     expect(bearingDelta(350, 10)).toBe(20);
+    expect(bearingDelta(0, 60)).toBe(60);
     expect(bearingDelta(0, 180)).toBe(180);
-  });
-
-  it('is specular when the camera looks at the sun', () => {
-    expect(band('glint', glintBand(90, 90))).toBe('specular');
-    expect(band('glint', glintBand(90, 115))).toBe('specular');
-  });
-
-  it('is clear when the sun is behind', () => {
-    expect(band('glint', glintBand(0, 180))).toBe('clear_of_sun');
-  });
-
-  it('is oblique in between', () => {
-    expect(band('glint', glintBand(0, 60))).toBe('oblique');
-  });
-
-  /*
-   * A hull with no heading has no camera bearing. Assuming one — north, say —
-   * would invent the axis for every fix that lacks it.
-   */
-  it('is unknown without a heading, never assumed', () => {
-    expect(glintBand(NaN, 180)).toBeNull();
-    expect(glintBand(null, 180)).toBeNull();
   });
 });
 
