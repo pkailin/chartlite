@@ -413,3 +413,11 @@ body {
   opacity: 0.75;
   text-align: right;
 }
+
+.absent-note {
+  margin: 0.7rem 0 0;
+  font-size: 0.63rem;
+  line-height: 1.5;
+  color: var(--ink-dim);
+  font-style: italic;
+}

@@ -24,23 +24,20 @@ const AXIS_TITLES: Record<string, string> = {
 };
 
 /**
- * Axes that exist in the taxonomy but cannot be measured here, and why.
+ * Axes that belong in this picture and are not in the data yet.
  *
- * Shown rather than omitted, for the same reason an empty band is shown: a
- * panel listing five axes reads as "these are the axes", and the reader has no
- * way to know that seven more were considered and found unreachable.
+ * Listed rather than omitted: a panel showing three bars reads as "these are
+ * the axes", and a reader has no way to know that others were considered.
+ * Each names HOW it would arrive, because that is the actionable part — an
+ * axis waiting on a hand annotation and an axis waiting on a sensor feed are
+ * different pieces of work.
  */
-const ABSENT: { axis: string; why: string }[] = [
-  { axis: 'illumination', why: 'recorded by hand' },
-  { axis: 'sun glare', why: 'recorded by hand — needs camera FOV' },
-  { axis: 'visibility', why: 'no source — NEA publishes none' },
-  { axis: 'traffic density', why: 'no historical AIS exists' },
-  { axis: 'vessel scale', why: 'no historical AIS exists' },
-  { axis: 'depth', why: 'bathymetry source unreachable' },
-  { axis: 'waterway', why: 'not yet built' },
-  { axis: 'shore proximity', why: 'not yet built' },
-  { axis: 'confinement', why: 'not yet built' },
-  { axis: 'encounter', why: 'not yet built' },
+const ABSENT: { axis: string; how: string }[] = [
+  { axis: 'backlighting condition', how: 'manually labelled' },
+  { axis: 'visibility', how: 'manually labelled' },
+  { axis: 'traffic density', how: 'manually labelled from annotation' },
+  { axis: 'ownship speed', how: 'from IMU data' },
+  { axis: 'sea state', how: 'manually labelled' },
 ];
 
 /**
@@ -57,9 +54,10 @@ function count(n: number): string {
 
 export default function CoveragePanel({ set, sensor }: CoveragePanelProps) {
   /*
-   * Every axis sums to the same total — each frame is banded on all of them —
-   * so the denominator is stated once at the top rather than repeated per
-   * axis, and the per-band rows are left to be plain counts.
+   * The denominator for the bar WIDTHS only; it is no longer printed. Every
+   * axis sums to it — a frame is banded on all of them — so a reader who
+   * wants the total can add any one axis's bands, and the rows stay plain
+   * counts rather than counts-with-a-percentage.
    */
   const total = set.tracks.reduce(
     (a, t) => a + (t.frames[sensor] ?? []).reduce((b, d) => b + d.n, 0),
@@ -78,11 +76,6 @@ export default function CoveragePanel({ set, sensor }: CoveragePanelProps) {
   return (
     <aside className="panel" aria-label="ODD coverage">
       <h2 className="panel-title">ODD coverage</h2>
-      <p className="panel-hint">
-        {total.toLocaleString()} {sensor} frames by condition. Empty bands are
-        drawn at zero — a condition never captured is the thing worth seeing.
-      </p>
-
       {set.axes.map((axis, ai) => {
         const bands = set.bands[axis] ?? [];
         const labels = set.bandLabels[axis] ?? bands;
@@ -133,20 +126,18 @@ export default function CoveragePanel({ set, sensor }: CoveragePanelProps) {
           <h3 className="axis-name">Not measured</h3>
         </header>
         <dl className="absent">
-          {ABSENT.map(({ axis, why }) => (
+          {ABSENT.map(({ axis, how }) => (
             <div className="absent-row" key={axis}>
               <dt>{axis}</dt>
-              <dd>{why}</dd>
+              <dd>{how}</dd>
             </div>
           ))}
         </dl>
-      </section>
-
-      {set.days.length > 0 && (
-        <p className="panel-foot">
-          {set.days.join(' · ')} · weather read by timestamp, not polled
+        <p className="absent-note">
+          All these ODD axes can be represented as strata like those above, but
+          are not present in the data.
         </p>
-      )}
+      </section>
     </aside>
   );
 }
