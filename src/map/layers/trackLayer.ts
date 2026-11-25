@@ -1,44 +1,37 @@
 /**
- * How a session's start mark is drawn, and what you get when you point at it.
+ * How a scenario's GNSS route and start mark are drawn, and what you get when
+ * you point at either.
  *
- * There was a track LINE here too, connecting every fix. It is gone: the frame
- * dots are the subject, and a line beneath them answered for them — at camera
- * density the two blurred together and a reader could not tell discrete sensor
- * positions from a drawn path. `git log` has it if it is ever wanted back.
+ * Colour comes from the feature's `ink` property, one per configured source:
+ * colour here means provenance. Scenarios from one source share a colour, and
+ * the hovered one is picked out by width (hover feature-state), not by hue.
  *
- * Kept pure — plain objects, no MapLibre import — so the layer specs can be
- * asserted in a test without a GL context, the same way basemap.ts is.
+ * Kept pure (plain objects, no MapLibre import) so the specs can be asserted in
+ * a test without a GL context, the same way basemap.ts is.
  */
 
+export const ROUTE_SOURCE = 'routes';
+export const ROUTE_LAYER = 'route-line';
 export const TRACK_HEAD_SOURCE = 'track-heads';
 export const TRACK_HEAD_LAYER = 'track-head';
 
-/**
- * Ink for anything that is NOT ours.
- *
- * A deep crimson, darker and more saturated than the pink-red OpenStreetMap
- * spends on motorways, so a track crossing a trunk road still reads as drawn
- * over the map rather than part of it. That collision is the reason to keep
- * this value dark: a brighter red would be the one colour on screen that the
- * basemap already uses for a line of similar weight.
- *
- * It is one colour for every external corpus on purpose. When our own captures
- * are drawn here they get their own, and the difference between "measured by
- * us" and "someone else's" must be visible without reading a legend.
- */
+/** The first source's ink. Mirrors `--external` in index.css. */
 export const EXTERNAL_INK = '#C8102E';
 
-/**
- * The start-of-track dot.
- *
- * Carries its own hover data because a moored session's line is sub-pixel —
- * for two of the three KR sessions this dot is the ONLY thing on screen, so it
- * cannot be decoration on top of a line that answers for it.
- */
+const HOVER = ['boolean', ['feature-state', 'hover'], false];
+
+export function routeLinePaint(): Record<string, unknown> {
+  return {
+    'line-color': ['get', 'ink'],
+    'line-width': ['case', HOVER, 5, 2.5],
+    'line-opacity': ['case', HOVER, 1, 0.75],
+  };
+}
+
 export function trackHeadPaint(): Record<string, unknown> {
   return {
-    'circle-radius': ['case', ['get', 'moored'], 6, 4],
-    'circle-color': EXTERNAL_INK,
+    'circle-radius': ['case', HOVER, 8, ['get', 'stationary'], 6, 4],
+    'circle-color': ['get', 'ink'],
     'circle-opacity': 0.95,
     'circle-stroke-width': 1.5,
     'circle-stroke-color': '#ffffff',
@@ -46,30 +39,36 @@ export function trackHeadPaint(): Record<string, unknown> {
 }
 
 export interface TrackHover {
-  label: string;
+  fid: number;
+  id: string;
+  scenario: string;
   source: string;
-  sourceNote: string;
-  vessel: string;
+  when: string;
   fixes: number;
   seconds: number;
   spanM: number;
-  moored: boolean;
+  stationary: boolean;
+  camera: number;
+  radar: number;
 }
 
 /** A feature's properties as the hover card wants them, or null. */
 export function hoverFrom(props: Record<string, unknown> | undefined): TrackHover | null {
-  if (!props || typeof props['label'] !== 'string') return null;
+  if (!props || typeof props['scenario'] !== 'string') return null;
   return {
-    label: String(props['label']),
+    fid: Number(props['fid'] ?? -1),
+    id: String(props['id'] ?? ''),
+    scenario: String(props['scenario']),
     source: String(props['source'] ?? ''),
-    sourceNote: String(props['sourceNote'] ?? ''),
-    vessel: String(props['vessel'] ?? ''),
+    when: String(props['when'] ?? ''),
     fixes: Number(props['fixes'] ?? 0),
     seconds: Number(props['seconds'] ?? 0),
     spanM: Number(props['spanM'] ?? 0),
     // MapLibre round-trips booleans through the tile encoder as strings on
     // some paths, so accept both rather than trusting the type.
-    moored: props['moored'] === true || props['moored'] === 'true',
+    stationary: props['stationary'] === true || props['stationary'] === 'true',
+    camera: Number(props['camera'] ?? 0),
+    radar: Number(props['radar'] ?? 0),
   };
 }
 

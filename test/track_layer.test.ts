@@ -13,18 +13,19 @@ describe('hoverFrom', () => {
 
   it('reads a feature into the card', () => {
     const h = hoverFrom({
-      label: 'S2A_2512171450', source: 'KR AIC', sourceNote: 'no licence',
-      vessel: 'ownship', fixes: 825, seconds: 167, spanM: 670, moored: false,
+      fid: 3, id: 'SynDataset/SCN-BCK-LIT_2oC2', scenario: 'SCN-BCK-LIT_2oC2', source: 'SynDataset',
+      fixes: 1664, seconds: 166, spanM: 4, stationary: true, camera: 3326, radar: 0,
     });
-    expect(h?.source).toBe('KR AIC');
-    expect(h?.fixes).toBe(825);
-    expect(h?.moored).toBe(false);
+    expect(h?.source).toBe('SynDataset');
+    expect(h?.fid).toBe(3);
+    expect(h?.camera).toBe(3326);
+    expect(h?.stationary).toBe(true);
   });
 
   /* MapLibre round-trips booleans as strings on some paths. */
   it('accepts a boolean that arrived as a string', () => {
-    expect(hoverFrom({ label: 'x', moored: 'true' })?.moored).toBe(true);
-    expect(hoverFrom({ label: 'x', moored: 'false' })?.moored).toBe(false);
+    expect(hoverFrom({ scenario: 'x', stationary: 'true' })?.stationary).toBe(true);
+    expect(hoverFrom({ scenario: 'x', stationary: 'false' })?.stationary).toBe(false);
   });
 });
 

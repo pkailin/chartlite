@@ -1,5 +1,6 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { createApi } from './server/api.mjs';
 
 /**
  * The app build and the dev server. Tests are configured separately in
@@ -9,26 +10,26 @@ import react from '@vitejs/plugin-react';
  * out from any mount point without the asset URLs having to agree with it in
  * advance.
  */
+
 /**
- * Identifies this build, and only this build.
- *
- * App appends it to the tracks URL. That is not belt-and-braces on top of the
- * cache headers — it fixes a case the headers CANNOT reach: a browser that
- * already stored tracks.json under a bad `immutable, max-age=1y` directive
- * keeps honouring it for a year, and never asks the server again to discover
- * the rule has changed. A new URL has no such entry, so it is fetched.
- *
- * Per BUILD rather than per load: a reload inside one build still hits cache,
- * which matters when the file is megabytes of fixes.
+ * The same /api and /data routes serve.mjs mounts, so `npm run dev` reads the
+ * configured sources exactly as production does.
  */
-const BUILD_ID = Date.now().toString(36);
+function chartliteApi(): Plugin {
+  return {
+    name: 'chartlite-api',
+    configureServer(server) {
+      const api = createApi();
+      server.middlewares.use((req, res, next) => {
+        api(req, res).then((handled: boolean) => { if (!handled) next(); }, next);
+      });
+    },
+  };
+}
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), chartliteApi()],
   base: './',
-  define: {
-    __BUILD_ID__: JSON.stringify(BUILD_ID),
-  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,

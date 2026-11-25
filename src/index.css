@@ -1,5 +1,5 @@
 /*
- * The whole stylesheet. One bar, one map, nothing else.
+ * The whole stylesheet: the bar, the chart view and the annotation reviewer.
  *
  * No theme toggle and no dark palette: the chart is OpenStreetMap's raster
  * ground, which is light and cannot be inverted without making the seamark
@@ -42,6 +42,7 @@ body {
 }
 
 .app {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -420,4 +421,351 @@ body {
   line-height: 1.5;
   color: var(--ink-dim);
   font-style: italic;
+}
+
+.body[hidden] {
+  display: none;
+}
+
+/* ── Segmented control (sensor kind, sensor stream) ────────────────────── */
+
+.seg {
+  display: flex;
+  margin: 0.5rem 0 0.6rem;
+}
+
+.seg-btn {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.6rem;
+  border: 1px solid var(--rule);
+  background: #fff;
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.seg-btn + .seg-btn {
+  border-left: 0;
+}
+
+.seg-on,
+.seg-on:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
+/* ── Annotation reviewer ───────────────────────────────────────────────── */
+
+.review {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.review-list {
+  flex: 0 0 17rem;
+  overflow-y: auto;
+  padding: 0.9rem 0.7rem 2rem;
+  border-right: 1px solid var(--rule);
+}
+
+.review-filter {
+  width: 100%;
+  margin: 0.4rem 0 0.6rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--rule);
+  font: inherit;
+  font-size: 0.74rem;
+}
+
+.review-source {
+  margin: 0.8rem 0 0.3rem;
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.review-item {
+  display: grid;
+  width: 100%;
+  gap: 0.1rem;
+  padding: 0.4rem 0.5rem;
+  margin-bottom: 0.2rem;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.review-item:hover {
+  background: rgba(22, 32, 42, 0.04);
+}
+
+.review-item-on,
+.review-item-on:hover {
+  background: #fff;
+  border-color: var(--rule);
+  border-left: 3px solid var(--ink);
+}
+
+.review-item-name {
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.review-item-meta {
+  font-size: 0.64rem;
+  color: var(--ink-dim);
+}
+
+.review-item-prog {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-dim);
+}
+
+.review-bar {
+  flex: 1 1 auto;
+  height: 4px;
+  background: rgba(22, 32, 42, 0.08);
+}
+
+.review-bar > span {
+  display: block;
+  height: 100%;
+  background: #2a9d4b;
+}
+
+.review-done {
+  color: #1f7a3a;
+  font-weight: 700;
+}
+
+.review-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.review-empty {
+  margin: auto;
+  padding: 2rem;
+  color: var(--ink-dim);
+  font-size: 0.86rem;
+  text-align: center;
+}
+
+.review-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1.1rem;
+  padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.review-toolbar .seg {
+  margin: 0;
+}
+
+.review-title {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.82rem;
+}
+
+.review-sub {
+  margin: 0;
+  font-size: 0.66rem;
+  color: var(--ink-dim);
+}
+
+.review-nav,
+.review-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.review-count {
+  min-width: 6.5rem;
+  text-align: center;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.btn {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--rule);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--ink-dim);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn-accept {
+  border-color: #2a9d4b;
+  color: #1f7a3a;
+}
+
+.btn-accepted,
+.btn-accepted:hover:not(:disabled) {
+  background: #2a9d4b;
+  border-color: #2a9d4b;
+  color: #fff;
+}
+
+.btn-quiet {
+  font-weight: 400;
+  color: var(--ink-dim);
+}
+
+.review-check {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  color: var(--ink-dim);
+}
+
+.review-timeline {
+  display: block;
+  width: 100%;
+  height: 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--rule);
+}
+
+.review-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.review-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  background: #0b1014;
+  border: 3px solid transparent;
+}
+
+.review-stage-accepted {
+  border-color: #2a9d4b;
+}
+
+.review-stage .review-empty {
+  color: #9fb3bd;
+}
+
+.review-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.review-badge {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.6rem;
+  padding: 0.25rem 0.6rem;
+  background: #2a9d4b;
+  color: #fff;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.review-side {
+  flex: 0 0 19rem;
+  overflow-y: auto;
+  padding: 0.8rem 0.9rem 2rem;
+  border-left: 1px solid var(--rule);
+}
+
+.review-side .axis-name {
+  margin: 0.9rem 0 0.35rem;
+}
+
+.review-side .axis-name:first-child {
+  margin-top: 0;
+}
+
+.review-file {
+  margin: 0 0 0.2rem;
+  font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  font-size: 0.64rem;
+  word-break: break-all;
+}
+
+.review-error {
+  margin: 0.3rem 0;
+  font-size: 0.7rem;
+  color: var(--alarm);
+}
+
+.review-boxes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.68rem;
+}
+
+.review-boxes li {
+  display: grid;
+  grid-template-columns: 0.7rem 2.2rem 1fr auto;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.18rem 0.2rem;
+}
+
+.review-boxes li:hover {
+  background: rgba(22, 32, 42, 0.05);
+}
+
+.review-swatch {
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+.review-box-id,
+.review-box-size {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-dim);
+}
+
+.review-keys {
+  margin: 1.2rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.62rem;
+  line-height: 1.6;
+  color: var(--ink-dim);
 }

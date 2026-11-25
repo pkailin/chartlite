@@ -1,5 +1,5 @@
 /**
- * Hand out the built bundle over HTTP. That is the whole job.
+ * Hand out the built bundle over HTTP, plus the API in server/api.mjs.
  *
  * Stdlib only — no express, no serve-static, no dependency that has to be
  * installed on a host before the chart will open. `node serve.mjs` is enough.
@@ -18,6 +18,7 @@ import { createReadStream, existsSync, realpathSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createApi } from './server/api.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, 'dist');
@@ -109,7 +110,12 @@ export function start() {
     process.exit(1);
   }
 
-  const server = createServer((req, res) => {
+  // /api/* and /data/*: the corpus, frame lists, dataset images, reviews.
+  const api = createApi();
+
+  const server = createServer(async (req, res) => {
+    if (await api(req, res)) return;
+
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405, { allow: 'GET, HEAD' }).end();
       return;
