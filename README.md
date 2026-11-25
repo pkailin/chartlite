@@ -3,20 +3,24 @@
 A clean standalone chart of the Singapore Strait. One tab, one map.
 
 ```bash
-cd src/chartlite && npm install && npm run build   # first time only
-ros2 launch chartlite chartlite.launch.py          # → http://localhost:3300/
+npm install && npm run build   # first time only
+npm run serve                  # → http://localhost:3300/
 ```
+
+No ROS needed. To run it as a ROS package instead, clone this repo into a
+colcon workspace's `src/`, `colcon build --packages-select chartlite`, then
+`ros2 launch chartlite chartlite.launch.py`.
 
 OpenStreetMap as the ground, the OpenSeaMap seamark overlay above it — buoyage,
 lights, anchorages and the traffic separation scheme. Nothing else yet.
 
-Joins **no DDS domain** and needs **no RTI Connext environment**: the fleet
-stack can be entirely down. Shares no code, no data and no configuration with
-`src/dataviz`.
+Joins **no DDS domain** and needs **no RTI Connext environment**. It was split
+out of `usv_fleet_stack` (where it lived at `src/chartlite`) on 2026-11-25 and
+shares no code, data or configuration with it.
 
 ## Why it exists
 
-`dataviz` has grown into a seven-surface perception V&V instrument. The
+`dataviz` (in `usv_fleet_stack`) has grown into a seven-surface perception V&V instrument. The
 surfaces earn their place, but it means there is no small thing left to build
 on — adding one idea means landing it inside a programme spine, a rail system, a
 bitemporal archive and a coverage firewall.
@@ -100,7 +104,7 @@ later must be checked the same way: fetch a tile and look at it.
 
 ## See also
 
-- [The design](../../docs/superpowers/specs/2026-10-07-chartlite-design.md) —
-  why this exists, and the weather-by-timestamp model it is built toward.
-- [dataviz](../dataviz/README.md) — the full instrument this is a clean slate
+- [The design](docs/design.md) — why this exists, and the weather-by-timestamp
+  model it is built toward.
+- `dataviz` in `usv_fleet_stack` — the full instrument this is a clean slate
   against.

@@ -42,10 +42,11 @@ MIN_NODE_MAJOR = 18
 def _source_dir() -> Path:
     """This package's SOURCE root — never the installed copy.
 
-    Walks up from wherever this file was loaded until it finds a tree holding
-    ``src/chartlite/package.json``. That works both when run straight out of
-    the source tree and when run from ``install/<pkg>/share/chartlite/launch``,
-    because the install tree sits beside ``src/`` in a colcon workspace.
+    Walks up from wherever this file was loaded until it finds either this
+    repo's root (``package.json`` beside ``serve.mjs``, when run straight from
+    a checkout) or ``src/chartlite/package.json`` (when run from
+    ``install/<pkg>/share/chartlite/launch`` with this repo cloned into the
+    colcon workspace's ``src/chartlite``).
 
     ``CHARTLITE_ROOT`` overrides it, for the layouts that assumption does not
     survive.
@@ -56,6 +57,10 @@ def _source_dir() -> Path:
 
     here = Path(__file__).resolve()
     for parent in here.parents:
+        # Run straight from a checkout of this repo: launch/ sits at its root.
+        if (parent / 'package.json').is_file() and (parent / 'serve.mjs').is_file():
+            return parent
+        # Run from install/: the checkout is cloned into the workspace's src/.
         candidate = parent / 'src' / 'chartlite' / 'package.json'
         if candidate.is_file():
             return candidate.parent
