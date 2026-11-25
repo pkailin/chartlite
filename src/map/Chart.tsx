@@ -10,73 +10,55 @@ import {
   type LngLat,
 } from './view';
 import {
+  ROUTE_LAYER,
+  ROUTE_SOURCE,
   TRACK_HEAD_LAYER,
   TRACK_HEAD_SOURCE,
   formatDuration,
   formatSpan,
   hoverFrom,
+  routeLinePaint,
   trackHeadPaint,
   type TrackHover,
 } from './layers/trackLayer';
-import {
-  FRAME_LAYER,
-  FRAME_SOURCE,
-  formatStamp,
-  frameDotPaint,
-  frameHoverFrom,
-  EXTERNAL_INK,
-  type FrameHover,
-} from './layers/frameLayer';
-import {
-  framesToGeoJSON,
-  trackHeadsToGeoJSON,
-  type SensorId,
-  type Track,
-} from '../data/tracks';
+import { headsToGeoJSON, routesToGeoJSON, type Corpus } from '../data/corpus';
 
 /**
  * The chart.
  *
  * THE ONE RULE THIS COMPONENT HOLDS: it fetches nothing. Everything it draws
- * arrives as props. A map component that loads its own data has to be
- * rewritten the first time the data source moves — and it moved on the first
- * feature, when tracks arrived from an adapter rather than from an API.
+ * arrives as props, so a new data source changes App and an adapter, never
+ * the map.
  */
 export interface ChartProps {
-  /** Opening centre. Defaults to mid-strait. */
   centre?: LngLat;
-  /** Opening zoom. */
   zoom?: number;
-  /** Tracks to draw. Provenance-labelled; see `src/data/tracks.ts`. */
-  tracks?: readonly Track[];
-  /** Which sensor's frames to show. One at a time, by design. */
-  sensor?: SensorId;
+  corpus: Corpus;
+  /** Called with a scenario id (`<source>/<dir>`) when a route or head is clicked. */
+  onSelect?: (id: string) => void;
 }
 
 export default function Chart({
   centre = DEFAULT_CENTRE,
   zoom = DEFAULT_ZOOM,
-  tracks = [],
-  sensor = 'camera',
+  corpus,
+  onSelect,
 }: ChartProps) {
   const container = useRef<HTMLDivElement | null>(null);
   const map = useRef<maplibregl.Map | null>(null);
   /** Whether the camera has already been moved to the data. See the fit below. */
   const fitted = useRef(false);
+  const hovered = useRef<number | null>(null);
+  const selectRef = useRef(onSelect);
+  selectRef.current = onSelect;
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const [hover, setHover] = useState<TrackHover | null>(null);
-  const [frameHover, setFrameHover] = useState<FrameHover | null>(null);
   const [hoverAt, setHoverAt] = useState<{ x: number; y: number } | null>(null);
 
-  /*
-   * Built ONCE. `centre` and `zoom` are the opening camera, not a live
-   * binding — rebuilding on every prop change would throw away the user's own
-   * pan and zoom, and recreating a GL context is expensive enough to see.
-   */
+  /* Built ONCE: rebuilding on a prop change would throw away the reader's pan and zoom. */
   useEffect(() => {
     if (!container.current || map.current) return;
-
     try {
       const m = new maplibregl.Map({
         container: container.current,
@@ -85,8 +67,6 @@ export default function Chart({
         zoom,
         minZoom: MIN_ZOOM,
         maxZoom: MAX_ZOOM,
-        // Tolerate hosts without a full GPU rather than refusing to draw: a
-        // blurry chart beats a blank page, and this tool is read, not flown.
         canvasContextAttributes: { failIfMajorPerformanceCaveat: false },
       });
       map.current = m;
@@ -94,15 +74,9 @@ export default function Chart({
       m.addControl(new maplibregl.ScaleControl({ unit: 'nautical' }));
       m.on('load', () => { setReady(true); });
     } catch (err) {
-      /*
-       * The constructor throws when there is no WebGL context — a headless
-       * host, a locked-down browser, a VM with no GL. Left uncaught this
-       * renders a white page with the reason only in the console, which reads
-       * as "the tool is broken" rather than "this browser cannot draw a map".
-       */
+      // No WebGL context: say so instead of rendering a white page.
       setFailed(err instanceof Error ? err.message : String(err));
     }
-
     return () => {
       map.current?.remove();
       map.current = null;
@@ -111,125 +85,81 @@ export default function Chart({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- opening camera, deliberately not a live binding
   }, []);
 
-  /* Tracks. Sources are upserted so new data never rebuilds the map. */
   useEffect(() => {
     const m = map.current;
     if (!m || !ready) return;
 
-    /*
-     * NO TRACK LINE. There was one, connecting every fix, and it is gone on
-     * purpose: the frame dots ARE the subject, and a line under them answered
-     * for them. At camera density the dots sit so close along the path that
-     * the two blurred together, and a reader could not tell whether they were
-     * looking at discrete sensor positions or at a drawn path.
-     *
-     * The heads stay. They mark where each session began, which nothing else
-     * on the chart says, and they keep a session hoverable as a whole rather
-     * than only one frame at a time.
-     */
-    const heads = trackHeadsToGeoJSON(tracks) as unknown as GeoJSON.FeatureCollection;
+    const upsert = (id: string, data: GeoJSON.FeatureCollection) => {
+      const src = m.getSource(id) as maplibregl.GeoJSONSource | undefined;
+      if (src) src.setData(data);
+      else m.addSource(id, { type: 'geojson', data });
+    };
+    upsert(ROUTE_SOURCE, routesToGeoJSON(corpus));
+    upsert(TRACK_HEAD_SOURCE, headsToGeoJSON(corpus));
 
-    const headSrc = m.getSource(TRACK_HEAD_SOURCE) as maplibregl.GeoJSONSource | undefined;
-    if (headSrc) headSrc.setData(heads);
-    else m.addSource(TRACK_HEAD_SOURCE, { type: 'geojson', data: heads });
-
-    if (!m.getLayer(TRACK_HEAD_LAYER)) {
+    if (!m.getLayer(ROUTE_LAYER)) {
       m.addLayer({
-        id: TRACK_HEAD_LAYER, type: 'circle', source: TRACK_HEAD_SOURCE,
-        paint: trackHeadPaint(),
+        id: ROUTE_LAYER, type: 'line', source: ROUTE_SOURCE,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: routeLinePaint(),
       });
     }
+    if (!m.getLayer(TRACK_HEAD_LAYER)) {
+      m.addLayer({ id: TRACK_HEAD_LAYER, type: 'circle', source: TRACK_HEAD_SOURCE, paint: trackHeadPaint() });
+    }
 
-    /*
-     * Frame the data, ONCE.
-     *
-     * The opening view is the whole Strait, where a 670 m track is about nine
-     * pixels and the two moored sessions are a dot — you would open the tool
-     * and reasonably conclude nothing had been ingested. So the first time
-     * tracks arrive the camera goes to them.
-     *
-     * Once only, guarded by a ref: refitting on every data change would yank
-     * the view back from wherever the reader had panned to, which is worse
-     * than never fitting at all.
-     */
-    if (!fitted.current && tracks.length > 0) {
+    /* Frame the data once. Refitting on every change would yank the reader's view back. */
+    if (!fitted.current && corpus.scenarios.length > 0) {
       const b = new maplibregl.LngLatBounds();
-      for (const t of tracks) for (const p of t.points) b.extend([p.lon, p.lat]);
+      for (const s of corpus.scenarios) for (const p of s.route) b.extend([p.lon, p.lat]);
       if (!b.isEmpty()) {
-        // maxZoom, because fitting two moored sessions a metre across would
-        // otherwise zoom to street level and lose all marine context.
         m.fitBounds(b, { padding: 80, maxZoom: 15, duration: 0 });
         fitted.current = true;
       }
     }
 
+    const setState = (fid: number | null, on: boolean) => {
+      if (fid === null || fid < 0) return;
+      m.setFeatureState({ source: ROUTE_SOURCE, id: fid }, { hover: on });
+      m.setFeatureState({ source: TRACK_HEAD_SOURCE, id: fid }, { hover: on });
+    };
     const show = (e: maplibregl.MapLayerMouseEvent) => {
-      const f = e.features?.[0];
-      const h = hoverFrom(f?.properties as Record<string, unknown> | undefined);
-      if (h) {
-        setHover(h);
-        setHoverAt({ x: e.point.x, y: e.point.y });
-        m.getCanvas().style.cursor = 'pointer';
+      const h = hoverFrom(e.features?.[0]?.properties as Record<string, unknown> | undefined);
+      if (!h) return;
+      if (hovered.current !== h.fid) {
+        setState(hovered.current, false);
+        hovered.current = h.fid;
+        setState(h.fid, true);
       }
+      setHover(h);
+      setHoverAt({ x: e.point.x, y: e.point.y });
+      m.getCanvas().style.cursor = 'pointer';
     };
     const hide = () => {
+      setState(hovered.current, false);
+      hovered.current = null;
       setHover(null);
       setHoverAt(null);
       m.getCanvas().style.cursor = '';
     };
-
-    m.on('mousemove', TRACK_HEAD_LAYER, show);
-    m.on('mouseleave', TRACK_HEAD_LAYER, hide);
-    return () => {
-      m.off('mousemove', TRACK_HEAD_LAYER, show);
-      m.off('mouseleave', TRACK_HEAD_LAYER, hide);
+    const click = (e: maplibregl.MapLayerMouseEvent) => {
+      const h = hoverFrom(e.features?.[0]?.properties as Record<string, unknown> | undefined);
+      if (h) selectRef.current?.(h.id);
     };
-  }, [ready, tracks]);
 
-  /*
-   * Frame dots for the selected sensor.
-   *
-   * Its OWN effect, keyed on `sensor` as well as the data, so switching tabs
-   * only swaps this source — the track lines, the camera position and the
-   * once-only fit are all untouched. Tabs that rebuilt the map would reset the
-   * reader's pan on every click, which is the whole reason they are tabs and
-   * not two separate pages.
-   */
-  useEffect(() => {
-    const m = map.current;
-    if (!m || !ready) return;
-
-    const data = framesToGeoJSON(tracks, sensor) as unknown as GeoJSON.FeatureCollection;
-    const src = m.getSource(FRAME_SOURCE) as maplibregl.GeoJSONSource | undefined;
-    if (src) src.setData(data);
-    else m.addSource(FRAME_SOURCE, { type: 'geojson', data });
-
-    if (!m.getLayer(FRAME_LAYER)) {
-      // Above the track line: the dots are the subject, the line is context.
-      m.addLayer({ id: FRAME_LAYER, type: 'circle', source: FRAME_SOURCE, paint: frameDotPaint(EXTERNAL_INK) });
+    for (const layer of [ROUTE_LAYER, TRACK_HEAD_LAYER]) {
+      m.on('mousemove', layer, show);
+      m.on('mouseleave', layer, hide);
+      m.on('click', layer, click);
     }
-
-    const show = (e: maplibregl.MapLayerMouseEvent) => {
-      const h = frameHoverFrom(e.features?.[0]?.properties as Record<string, unknown> | undefined);
-      if (h) {
-        setFrameHover(h);
-        setHover(null);           // a dot sits on the line; only one card
-        setHoverAt({ x: e.point.x, y: e.point.y });
-        m.getCanvas().style.cursor = 'pointer';
+    return () => {
+      for (const layer of [ROUTE_LAYER, TRACK_HEAD_LAYER]) {
+        m.off('mousemove', layer, show);
+        m.off('mouseleave', layer, hide);
+        m.off('click', layer, click);
       }
     };
-    const hide = () => {
-      setFrameHover(null);
-      setHoverAt(null);
-      m.getCanvas().style.cursor = '';
-    };
-    m.on('mousemove', FRAME_LAYER, show);
-    m.on('mouseleave', FRAME_LAYER, hide);
-    return () => {
-      m.off('mousemove', FRAME_LAYER, show);
-      m.off('mouseleave', FRAME_LAYER, hide);
-    };
-  }, [ready, tracks, sensor]);
+  }, [ready, corpus]);
 
   if (failed !== null) {
     return (
@@ -246,39 +176,19 @@ export default function Chart({
 
   return (
     <div className="chart" ref={container} data-testid="chart">
-      {frameHover && hoverAt && (
-        <div
-          className="hover-card"
-          data-testid="frame-hover-card"
-          style={{ left: hoverAt.x + 14, top: hoverAt.y + 14 }}
-        >
-          <div className="hover-source">{frameHover.source} · {frameHover.sensor}</div>
-          <div className="hover-label">{frameHover.label}</div>
-          <dl className="hover-facts">
-            <dt>frames here</dt><dd>{frameHover.n.toLocaleString()}</dd>
-            <dt>at</dt><dd>{formatStamp(frameHover.t)}</dd>
-          </dl>
-          {frameHover.sourceNote && <p className="hover-note">{frameHover.sourceNote}</p>}
-        </div>
-      )}
-      {!frameHover && hover && hoverAt && (
-        <div
-          className="hover-card"
-          data-testid="hover-card"
-          style={{ left: hoverAt.x + 14, top: hoverAt.y + 14 }}
-        >
-          {/* The source leads. A position on a chart with no provenance is
-              indistinguishable from one we measured. */}
+      {hover && hoverAt && (
+        <div className="hover-card" data-testid="hover-card" style={{ left: hoverAt.x + 14, top: hoverAt.y + 14 }}>
           <div className="hover-source">{hover.source}</div>
-          <div className="hover-label">{hover.label}</div>
+          <div className="hover-label">{hover.scenario}</div>
           <dl className="hover-facts">
-            <dt>vessel</dt><dd>{hover.vessel}</dd>
-            <dt>fixes</dt><dd>{hover.fixes.toLocaleString()}</dd>
+            {hover.when && (<><dt>start</dt><dd>{hover.when}</dd></>)}
             <dt>duration</dt><dd>{formatDuration(hover.seconds)}</dd>
             <dt>travelled</dt>
-            <dd>{hover.moored ? `${formatSpan(hover.spanM)} — moored` : formatSpan(hover.spanM)}</dd>
+            <dd>{hover.stationary ? `${formatSpan(hover.spanM)} (stationary)` : formatSpan(hover.spanM)}</dd>
+            <dt>camera frames</dt><dd>{hover.camera.toLocaleString()}</dd>
+            <dt>radar frames</dt><dd>{hover.radar.toLocaleString()}</dd>
           </dl>
-          {hover.sourceNote && <p className="hover-note">{hover.sourceNote}</p>}
+          <p className="hover-note">Click to review annotations</p>
         </div>
       )}
     </div>

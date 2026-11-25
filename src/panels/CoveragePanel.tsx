@@ -1,119 +1,93 @@
-import { axisCoverage, type SensorId, type TrackSet } from '../data/tracks';
+import {
+  SENSOR_KINDS,
+  SENSOR_LABELS,
+  axisCoverage,
+  bandLabel,
+  framesOf,
+  type Corpus,
+  type SensorKind,
+} from '../data/corpus';
 
 /**
- * What conditions the corpus actually sampled, one bar per band.
+ * How the corpus is spread across each labelled ODD attribute, one row per
+ * value.
  *
- * THE EMPTY BANDS ARE THE POINT. A band with no frames is still drawn, at zero
- * — because "we have never captured in fresh wind" is the single most useful
- * thing this panel can tell you, and a chart that only plots what exists can
- * never say it. Hiding a zero row turns a gap into an absence of evidence
- * about a gap.
+ * Each row gives the number of FRAMES of the selected sensor kind.
  *
- * Counts are FRAMES, not dots: a place holding six camera frames is six frames
- * captured in that condition.
+ * THE EMPTY ROWS ARE THE POINT. A value with no frames is still drawn, at
+ * zero, because "nothing at sea state 6" is the most useful thing this panel
+ * can say.
  */
 export interface CoveragePanelProps {
-  set: TrackSet;
-  sensor: SensorId;
+  corpus: Corpus;
+  kind: SensorKind;
+  onKind: (k: SensorKind) => void;
 }
 
-const AXIS_TITLES: Record<string, string> = {
-  wind: 'Wind',
-  rain: 'Rain',
-  bin: 'Time of day',
-};
-
-/**
- * Axes that belong in this picture and are not in the data yet.
- *
- * Listed rather than omitted: a panel showing three bars reads as "these are
- * the axes", and a reader has no way to know that others were considered.
- * Each names HOW it would arrive, because that is the actionable part — an
- * axis waiting on a hand annotation and an axis waiting on a sensor feed are
- * different pieces of work.
- */
-const ABSENT: { axis: string; how: string }[] = [
-  { axis: 'backlighting condition', how: 'manually labelled' },
-  { axis: 'visibility', how: 'manually labelled' },
-  { axis: 'traffic density', how: 'manually labelled from annotation' },
-  { axis: 'ownship speed', how: 'from IMU data' },
-  { axis: 'sea state', how: 'manually labelled' },
-];
-
-/**
- * Frames, grouped, as a plain count.
- *
- * Counts rather than percentages because a percentage hides the size of what
- * it is a percentage OF: 1.7% of rain reads the same whether it rests on 580
- * frames or on six, and those are very different claims about evidence. The
- * bar beside it still carries the proportion, so nothing is lost.
- */
-function count(n: number): string {
-  return n.toLocaleString();
-}
-
-export default function CoveragePanel({ set, sensor }: CoveragePanelProps) {
-  /*
-   * The denominator for the bar WIDTHS only; it is no longer printed. Every
-   * axis sums to it — a frame is banded on all of them — so a reader who
-   * wants the total can add any one axis's bands, and the rows stay plain
-   * counts rather than counts-with-a-percentage.
-   */
-  const total = set.tracks.reduce(
-    (a, t) => a + (t.frames[sensor] ?? []).reduce((b, d) => b + d.n, 0),
-    0,
-  );
-
-  if (set.axes.length === 0) {
-    return (
-      <aside className="panel">
-        <h2 className="panel-title">ODD coverage</h2>
-        <p className="panel-hint">Nothing ingested yet.</p>
-      </aside>
-    );
-  }
+export default function CoveragePanel({ corpus, kind, onKind }: CoveragePanelProps) {
+  const totals = Object.fromEntries(
+    SENSOR_KINDS.map((k) => [k, corpus.scenarios.reduce((a, s) => a + framesOf(s, k), 0)]),
+  ) as Record<SensorKind, number>;
 
   return (
     <aside className="panel" aria-label="ODD coverage">
       <h2 className="panel-title">ODD coverage</h2>
-      {set.axes.map((axis, ai) => {
-        const bands = set.bands[axis] ?? [];
-        const labels = set.bandLabels[axis] ?? bands;
-        const { counts, unknown } = axisCoverage(set.tracks, sensor, ai, bands.length);
-        const filled = counts.filter((c) => c > 0).length;
 
+      <div className="seg" role="tablist" aria-label="Sensor">
+        {SENSOR_KINDS.map((k) => (
+          <button
+            key={k}
+            type="button"
+            role="tab"
+            aria-selected={k === kind}
+            className={`seg-btn${k === kind ? ' seg-on' : ''}`}
+            onClick={() => { onKind(k); }}
+          >
+            {SENSOR_LABELS[k]}
+            <span className="tab-n">{totals[k].toLocaleString()}</span>
+          </button>
+        ))}
+      </div>
+
+      {totals[kind] === 0 && (
+        <p className="panel-hint">No {SENSOR_LABELS[kind].toLowerCase()} frames in any source yet.</p>
+      )}
+
+      {corpus.axes.length === 0 && <p className="panel-hint">Nothing loaded yet.</p>}
+
+      {corpus.axes.map((axis) => {
+        const cov = axisCoverage(corpus.scenarios, kind, axis);
+        const filled = cov.frames.filter((c) => c > 0).length;
         return (
-          <section className="axis" key={axis}>
+          <section className="axis" key={axis.key}>
             <header className="axis-head">
-              <h3 className="axis-name">{AXIS_TITLES[axis] ?? axis}</h3>
-              <span className="axis-fill" title="bands with at least one frame">
-                {filled}/{bands.length}
+              <h3 className="axis-name" title={axis.key}>{axis.label}</h3>
+              <span className="axis-fill" title="values with at least one frame">
+                {filled}/{axis.values.length}
               </span>
             </header>
 
-            {bands.map((band, bi) => {
-              const n = counts[bi] ?? 0;
-              const share = total === 0 ? 0 : (100 * n) / total;
+            {axis.values.map((v, i) => {
+              const n = cov.frames[i] ?? 0;
+              const share = cov.total === 0 ? 0 : (100 * n) / cov.total;
               return (
-                <div className={`band${n === 0 ? ' band-empty' : ''}`} key={band}>
+                <div className={`band${n === 0 ? ' band-empty' : ''}`} key={v}>
                   <div className="band-row">
-                    <span className="band-label">{labels[bi] ?? band}</span>
-                    <span className="band-pct">{count(n)}</span>
+                    <span className="band-label">{bandLabel(v)}</span>
+                    <span className="band-pct">{n.toLocaleString()}</span>
                   </div>
                   <div className="band-track">
-                    {/* A hairline at zero so an empty band still reads as a
-                        row that exists, rather than as a missing one. */}
                     <div className="band-fill" style={{ width: `${String(Math.max(share, 0.4))}%` }} />
                   </div>
                 </div>
               );
             })}
 
-            {unknown > 0 && (
+            {cov.unknownFrames > 0 && (
               <div className="band band-unknown">
                 <div className="band-row">
-                  <span className="band-label">unknown</span>
-                  <span className="band-pct">{count(unknown)}</span>
+                  <span className="band-label">not labelled</span>
+                  <span className="band-pct">{cov.unknownFrames.toLocaleString()}</span>
                 </div>
               </div>
             )}
@@ -121,23 +95,6 @@ export default function CoveragePanel({ set, sensor }: CoveragePanelProps) {
         );
       })}
 
-      <section className="axis axis-absent">
-        <header className="axis-head">
-          <h3 className="axis-name">Not measured</h3>
-        </header>
-        <dl className="absent">
-          {ABSENT.map(({ axis, how }) => (
-            <div className="absent-row" key={axis}>
-              <dt>{axis}</dt>
-              <dd>{how}</dd>
-            </div>
-          ))}
-        </dl>
-        <p className="absent-note">
-          All these ODD axes can be represented as strata like those above, but
-          are not present in the data.
-        </p>
-      </section>
     </aside>
   );
 }

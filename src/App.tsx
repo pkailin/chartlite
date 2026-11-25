@@ -1,115 +1,129 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Chart from './map/Chart';
 import CoveragePanel from './panels/CoveragePanel';
-import {
-  EMPTY_TRACK_SET,
-  SENSORS,
-  SENSOR_LABELS,
-  frameCount,
-  parseTrackSet,
-  type SensorId,
-  type TrackSet,
-} from './data/tracks';
+import ReviewView, { type ReviewTarget } from './review/ReviewView';
+import { EMPTY_CORPUS, parseCorpus, type Corpus, type SensorKind } from './data/corpus';
+import { url } from './review/api';
 
-/** Injected by Vite at build time — see BUILD_ID in vite.config.ts. */
-declare const __BUILD_ID__: string;
+type View = 'chart' | 'review';
 
 /**
- * Written by an adapter under `tools/`, served from `public/`.
- *
- * The build id in the query is load-bearing. An earlier build served this file
- * with `immutable, max-age=31536000`, and a browser that stored it under that
- * directive goes on honouring it for a year — it never asks again, so fixing
- * the server header cannot reach it. A per-build URL has no poisoned entry.
+ * Where the page is, kept in the hash so a refresh lands in the same place:
+ *   #chart
+ *   #review/<source>/<scenario dir>/<sensor>/<frame index, 1-based>
  */
-const TRACKS_URL = `./tracks.json?b=${__BUILD_ID__}`;
+interface Route { view: View; review: ReviewTarget }
+
+function parseHash(hash: string): Route {
+  const parts = hash.replace(/^#\/?/, '').split('/').map((p) => decodeURIComponent(p));
+  if (parts[0] === 'review') {
+    const [, source, dir, sensor, idx] = parts;
+    return {
+      view: 'review',
+      review: {
+        scenarioId: source && dir ? `${source}/${dir}` : null,
+        sensor: sensor || null,
+        index: Math.max(0, (Number(idx) || 1) - 1),
+      },
+    };
+  }
+  return { view: 'chart', review: { scenarioId: null, sensor: null, index: 0 } };
+}
+
+function toHash(r: Route): string {
+  if (r.view === 'chart') return '#chart';
+  const { scenarioId, sensor, index } = r.review;
+  if (!scenarioId) return '#review';
+  const enc = encodeURIComponent;
+  const [source, ...dir] = scenarioId.split('/');
+  return `#review/${enc(source ?? '')}/${enc(dir.join('/'))}/${enc(sensor ?? '')}/${String(index + 1)}`;
+}
 
 /**
- * One tab, one chart.
+ * App owns the data and hands it down. The map and the panels fetch nothing
+ * of their own, except the reviewer's per-frame images and boxes.
  *
- * App owns the data and hands it to the map — the map fetches nothing. See the
- * rule at the top of `map/Chart.tsx`.
- *
- * THE BAR CARRIES NO STATISTICS. It held a drawn/excluded count briefly and
- * that was the wrong place for it: the bar is the tool's identity, not its
- * readout, and a number parked there is read once and then stops being read.
- * What the adapter included and excluded is printed when it runs. When a
- * surface exists that is about the ingest, the count belongs on that.
- *
- * A FAILED LOAD still has to say so somewhere, so it is reported over the
- * chart rather than silently swallowed — a chart with no tracks and no
- * explanation is indistinguishable from one where nothing was ingested.
+ * A FAILED LOAD is reported over the page and never swallowed: an empty chart
+ * with no explanation looks the same as one with nothing configured.
  */
 export default function App() {
-  const [set, setSet] = useState<TrackSet>(EMPTY_TRACK_SET);
+  const [corpus, setCorpus] = useState<Corpus>(EMPTY_CORPUS);
   const [error, setError] = useState<string | null>(null);
-  /*
-   * RADAR first in SENSORS order, camera selected. The order is the sentence
-   * "radar and camera"; the default is camera because it is the denser of the
-   * two, so the first thing on screen shows the fullest picture.
-   */
-  const [sensor, setSensor] = useState<SensorId>('camera');
+  const [kind, setKind] = useState<SensorKind>('camera');
+  const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
 
   useEffect(() => {
     let live = true;
-    fetch(TRACKS_URL)
-      .then((r) => {
-        /*
-         * A 404 is the ORDINARY state, not an error: a fresh clone has no
-         * tracks file because the adapter has not been run and, for KR, its
-         * output may not be committed.
-         */
-        if (r.status === 404) return null;
-        if (!r.ok) throw new Error(`HTTP ${String(r.status)}`);
-        return r.json();
+    fetch(url('/api/corpus'))
+      .then(async (r) => {
+        if (!r.ok) {
+          let msg = `HTTP ${String(r.status)}`;
+          try { msg = ((await r.json()) as { error?: string }).error ?? msg; } catch { /* not JSON */ }
+          throw new Error(msg);
+        }
+        return r.json() as Promise<unknown>;
       })
-      .then((raw) => {
-        if (!live) return;
-        if (raw !== null) setSet(parseTrackSet(raw));
-      })
-      .catch((e: unknown) => {
-        if (!live) return;
-        setError(e instanceof Error ? e.message : String(e));
-      });
+      .then((raw) => { if (live) setCorpus(parseCorpus(raw)); })
+      .catch((e: unknown) => { if (live) setError(e instanceof Error ? e.message : String(e)); });
     return () => { live = false; };
   }, []);
+
+  useEffect(() => {
+    const onHash = () => { setRoute(parseHash(window.location.hash)); };
+    window.addEventListener('hashchange', onHash);
+    return () => { window.removeEventListener('hashchange', onHash); };
+  }, []);
+
+  /* replaceState, not a new history entry per frame: Back should leave the reviewer, not step one frame. */
+  const navigate = useCallback((r: Route, push = false) => {
+    setRoute(r);
+    const h = toHash(r);
+    if (h !== window.location.hash) {
+      if (push) window.history.pushState(null, '', h);
+      else window.history.replaceState(null, '', h);
+    }
+  }, []);
+
+  const onTarget = useCallback((t: ReviewTarget) => { navigate({ view: 'review', review: t }); }, [navigate]);
+  const openScenario = useCallback((id: string) => {
+    navigate({ view: 'review', review: { scenarioId: id, sensor: null, index: 0 } }, true);
+  }, [navigate]);
 
   return (
     <div className="app">
       <header className="bar">
         <span className="bar-name">CHARTLITE</span>
         <span className="bar-where">Singapore Strait</span>
-
-        {/* One sensor at a time. Switching swaps a source, never the camera
-            position — see the frame effect in map/Chart.tsx. */}
-        <nav className="tabs" aria-label="Sensor">
-          {SENSORS.map((id) => (
+        <nav className="tabs" aria-label="View">
+          {([['chart', 'CHART'], ['review', 'ANNOTATIONS']] as const).map(([v, label]) => (
             <button
-              key={id}
+              key={v}
               type="button"
-              className={`tab${id === sensor ? ' tab-on' : ''}`}
-              aria-pressed={id === sensor}
-              onClick={() => { setSensor(id); }}
+              className={`tab${route.view === v ? ' tab-on' : ''}`}
+              aria-pressed={route.view === v}
+              onClick={() => { navigate({ ...route, view: v }, true); }}
             >
-              {SENSOR_LABELS[id]}
-              <span className="tab-n">
-                {set.tracks.reduce((a, t) => a + frameCount(t, id), 0).toLocaleString()}
-              </span>
+              {label}
             </button>
           ))}
         </nav>
       </header>
-      <main className="body">
-        <CoveragePanel set={set} sensor={sensor} />
+
+      {error !== null && (
+        <div className="load-error" role="alert">Could not load the corpus: {error}</div>
+      )}
+
+      {/* The chart stays mounted while reviewing, so coming back keeps the reader's pan and zoom. */}
+      <main className="body" hidden={route.view !== 'chart'}>
+        <CoveragePanel corpus={corpus} kind={kind} onKind={setKind} />
         <div className="stage">
-        <Chart tracks={set.tracks} sensor={sensor} />
-        {error !== null && (
-          <div className="load-error" role="alert">
-            Could not load tracks: {error}
-          </div>
-        )}
+          <Chart corpus={corpus} onSelect={openScenario} />
         </div>
       </main>
+
+      {route.view === 'review' && (
+        <ReviewView corpus={corpus} target={route.review} onTarget={onTarget} />
+      )}
     </div>
   );
 }
