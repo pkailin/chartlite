@@ -105,7 +105,7 @@ export function start() {
    */
   if (!existsSync(join(ROOT, 'index.html'))) {
     console.error(`chartlite: no bundle at ${ROOT}`);
-    console.error('chartlite: run `npm run build` in src/chartlite first');
+    console.error('chartlite: run `npm run build` first');
     process.exit(1);
   }
 

@@ -3,10 +3,8 @@
     ros2 launch chartlite chartlite.launch.py
     ros2 launch chartlite chartlite.launch.py port:=3301
 
-**This joins NO DDS domain.** Every other launch file in this repo needs the
-RTI Connext environment sourced first; this one does not, and saying so matters
-— a reader who sources it out of habit should know it was unnecessary rather
-than conclude it was required. The fleet stack can be entirely down.
+**This joins NO DDS domain** and needs no middleware environment sourced: it
+only starts a static web server.
 
 **It serves the SOURCE tree, not install/.** `CMakeLists.txt` installs `launch/`
 and nothing else, so there is no copied bundle that can go stale behind an edit
@@ -31,7 +29,6 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 
-#: Clear of the aquarium GCS (3000 frontend, 3001/3002 gateway) and port 3200.
 DEFAULT_PORT = '3300'
 
 #: serve.mjs is stdlib-only, so this is the floor for the syntax it uses, not
@@ -68,7 +65,7 @@ def _source_dir() -> Path:
     raise RuntimeError(
         'chartlite: cannot find the source tree from '
         f'{here}. This package serves its bundle from source and is not '
-        'relocatable; set CHARTLITE_ROOT to src/chartlite.'
+        'relocatable; set CHARTLITE_ROOT to the chartlite checkout.'
     )
 
 

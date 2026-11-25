@@ -1,9 +1,9 @@
 {
-  "name": "usv-chartlite",
+  "name": "chartlite",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A clean standalone chart of the Singapore Strait. One tab, one map, no archive.",
+  "description": "A chart of the Singapore Strait placing camera and radar frames, with ODD coverage.",
   "engines": {
     "node": ">=18"
   },

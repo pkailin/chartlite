@@ -4,16 +4,11 @@
   <name>chartlite</name>
   <version>0.1.0</version>
   <description>
-    A clean standalone chart of the Singapore Strait: OpenStreetMap ground with
-    the OpenSeaMap seamark overlay above it, served on port 3300.
-
-    One tab, one map. No archive, no weather, no coverage arithmetic — a
-    deliberately empty starting point that features are grown back onto one at
-    a time.
-
-    Joins no DDS domain and needs no RTI Connext environment.
+    A chart of the Singapore Strait that places every camera and radar frame
+    of a field collection where it was taken, with ODD coverage by wind, rain
+    and time of day. Served on port 3300.
   </description>
-  <maintainer email="pc5ums001@gmail.com">USV Fleet Stack</maintainer>
+  <maintainer email="pc5ums001@gmail.com">pkailin</maintainer>
   <license>Proprietary</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

@@ -1,108 +1,122 @@
 # chartlite
 
-A clean standalone chart of the Singapore Strait. One tab, one map.
+A chart of the Singapore Strait that places every camera and radar frame of a
+field collection where it was taken, and shows how those frames are spread
+across wind, rain and time of day.
+
+- **Ground:** OpenStreetMap, with the OpenSeaMap seamark overlay above it —
+  buoyage, lights, anchorages and the traffic separation scheme. Both keyless.
+- **Frames:** one dot per GPS fix that has frames, with a tab per sensor
+  (camera, radar).
+- **ODD coverage:** a panel that counts the frames in each band of each measured
+  axis — wind (kn), rain (mm/h) and four-hour time-of-day slots — and lists the
+  axes the data cannot measure, with how each would arrive.
+
+## Quick start
+
+Needs Node ≥ 18.
 
 ```bash
-npm install && npm run build   # first time only
-npm run serve                  # → http://localhost:3300/
+npm install
+npm run build
+npm run serve        # → http://localhost:3300/
 ```
 
-No ROS needed. To run it as a ROS package instead, clone this repo into a
-colcon workspace's `src/`, `colcon build --packages-select chartlite`, then
-`ros2 launch chartlite chartlite.launch.py`.
-
-OpenStreetMap as the ground, the OpenSeaMap seamark overlay above it — buoyage,
-lights, anchorages and the traffic separation scheme. Nothing else yet.
-
-Joins **no DDS domain** and needs **no RTI Connext environment**. It was split
-out of `usv_fleet_stack` (where it lived at `src/chartlite`) on 2026-11-25 and
-shares no code, data or configuration with it.
-
-## Why it exists
-
-The fleet's full perception V&V instrument has grown many surfaces. They earn
-their place, but it means there is no small thing left to build on — adding one
-idea means landing it inside a programme spine, a rail system, a bitemporal
-archive and a coverage firewall.
-
-`chartlite` is a deliberately empty starting point that features are grown back
-onto one at a time.
+The chart runs with no data. To draw frames, ingest a collection first (see
+[Data](#data)), then rebuild.
 
 ## Commands
 
 ```bash
-npm run dev          # vite dev server with hot reload, port 3300, no ROS
+npm run dev          # vite dev server with hot reload, port 3300
 npm run build        # typecheck + bundle to dist/
+npm run serve        # serve dist/ with serve.mjs (stdlib-only)
 npm test             # vitest
 npm run typecheck    # tsc --noEmit
-npm run verify       # typecheck + test + build — the acceptance signal
-npm run serve        # node serve.mjs, without ros2 launch
-
-colcon build --packages-select chartlite   # once, so ros2 launch can find it
-colcon test  --packages-select chartlite   # runs npm test — NOT vacuous
+npm run verify       # typecheck + test + build
 ```
 
-Launch arguments: `port:=3301`, `host:=127.0.0.1`.
+`serve.mjs` takes `--port` and `--host` (or `CHARTLITE_PORT` and
+`CHARTLITE_HOST`); the defaults are `3300` and `0.0.0.0`.
+
+## Data
+
+The chart reads `public/tracks.json`, written by an adapter under `tools/`:
+
+```bash
+# from a URL or a local directory laid out as <root>/<session>/navsat_log.json
+node tools/ingest_kr_navsat.mjs <source> [--out FILE] [--mirror DIR]
+npm run build
+```
+
+The adapter places each frame at the GPS fix nearest in time and conditions it
+on the weather recorded at that moment, fetched by date from Singapore's NEA
+station network (`api.data.gov.sg`, no key). `--mirror DIR` keeps a local copy
+of every log it fetches, so a run can be repeated if the source goes away.
+
+`public/tracks.json` is gitignored: the source collection carries no licence,
+so positions derived from it are never committed. Every track shows that caveat
+on screen.
+
+A new collection format gets its own adapter beside this one. The map only
+knows the shape in `src/data/tracks.ts`.
 
 ## Layout
 
 ```
-launch/chartlite.launch.py   ros2 entry; resolves to the SOURCE tree
-serve.mjs                    stdlib-only static server for dist/
-src/App.tsx                  one tab
-src/map/Chart.tsx            the MapLibre component
-src/map/basemap.ts           style definition (pure, tested)
-src/map/view.ts              opening camera and chart frame (pure, tested)
+serve.mjs                     static server for dist/
+src/App.tsx                   loads the data; sensor tabs
+src/map/Chart.tsx             the MapLibre component
+src/map/basemap.ts            style definition (pure, tested)
+src/map/view.ts               opening camera and chart frame (pure, tested)
+src/map/layers/               frame and track layers
+src/panels/CoveragePanel.tsx  ODD coverage
+src/data/tracks.ts            the track-set shape every adapter writes
+tools/ingest_kr_navsat.mjs    adapter: field-collection navsat logs → tracks.json
+tools/nea.mjs                 historical weather from NEA
+tools/odd.mjs                 ODD axes and band edges
+launch/chartlite.launch.py    optional ROS 2 launch entry
 ```
 
-## The one architectural rule
+## Design notes
 
-**`Chart` fetches nothing.** Everything it draws arrives as props from `App`.
+**`Chart` fetches nothing.** Everything it draws arrives as props from `App`, so
+a new data source changes `App` and an adapter, never the map.
 
-Today that is only a camera position. When weather, coverage or tracks land they
-arrive the same way and the map module does not change. A map component that
-loads its own data has to be rewritten the first time the data source moves,
-which is the whole reason this tool is a fresh start rather than a fork.
+**Weather is fetched by timestamp, not polled live.** The data's own timestamps
+decide which weather is fetched, so any collection can be conditioned however
+long after it was recorded.
 
-## Deliberately absent
+**No dark theme.** The OpenStreetMap raster is light and cannot be inverted
+without making the seamark overlay unreadable.
 
-No weather, no database, no operating-area polygon, no panels, no theme toggle,
-no ODD arithmetic. Each is a later step.
+**CARTO is not used.** `basemaps.cartocdn.com` serves unauthenticated requests
+with `API KEY REQUIRED` drawn into the tile image, with no error to explain it.
+`test/basemap.test.ts` pins that no keyed host is used. Check any new basemap by
+fetching a tile and looking at it.
 
-There is **no dark theme**, and that is a decision rather than an omission: the
-ground is OpenStreetMap's raster, which is light and cannot be inverted without
-making the seamark overlay unreadable. A dark chrome around a light map reads as
-a bug. When a keyless dark basemap exists, a theme becomes worth having.
-
-## Two things worth knowing
-
-**It serves the source tree, and is not relocatable.** `CMakeLists.txt` installs
-`launch/` and nothing else, so no bundle is ever copied into `install/`. That is
-the point: a copy-installed bundle is not covered by `--symlink-install`, so an
-edit does not reach `install/` until a rebuild — and it then needs a freshness
-gate that can refuse to launch. Nothing is copied here, so there is no
-second copy to drift and nothing to gate. The cost is that an `install/` tree
-without its source beside it cannot serve. `CHARTLITE_ROOT` overrides the
-lookup if your layout breaks that assumption.
-
-**CARTO is deliberately not used.** `basemaps.cartocdn.com` is the obvious dark
-basemap and it now serves unauthenticated requests with `API KEY REQUIRED`
-rendered *into* the tile image — verified 2026-08-27 by fetching one directly —
-so the watermark tiles across the whole chart with no error anywhere to explain
-it. `test/basemap.test.ts` pins that no keyed host returns. Any basemap added
-later must be checked the same way: fetch a tile and look at it.
-
-## Failure modes, and what each does
+## Failure modes
 
 | Failure | Behaviour |
 |---|---|
-| `dist/` missing | Hard stop before anything spawns, naming `npm run build`. |
-| Port already in use | Exit 1 naming the port. **No respawn** — a process that binds a port plus a restart-on-failure is an unbounded loop that reads as a hang. |
-| No WebGL context | The chart renders an explanatory message, not a white page. |
+| `dist/` missing | The server stops before starting and names `npm run build`. |
+| Port in use | Exits 1 naming the port. No respawn. |
+| No WebGL context | The chart shows an explanatory message, not a white page. |
 | A tile 404s | MapLibre draws blank tiles; the chart stays usable. |
-| `node` missing or < 18 | The launch file refuses with the version it found. |
+| `tracks.json` missing | The chart draws with no frames: nothing has been ingested yet. |
+| `tracks.json` unreadable | The chart says so over the map. |
 
-## See also
+## Running under ROS 2 (optional)
 
-- [The design](docs/design.md) — why this exists, and the weather-by-timestamp
-  model it is built toward.
+chartlite is also an `ament_cmake` package. Clone it into a colcon workspace as
+`src/chartlite`, then:
+
+```bash
+colcon build --packages-select chartlite
+ros2 launch chartlite chartlite.launch.py        # port:=3301 host:=127.0.0.1
+colcon test --packages-select chartlite          # runs npm test
+```
+
+The package installs only `launch/` and serves `dist/` from the source tree, so
+there is no installed copy of the bundle to go stale. `CHARTLITE_ROOT` points the
+launch file at the source if your layout differs.
