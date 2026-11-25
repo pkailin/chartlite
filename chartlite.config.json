@@ -1,6 +1,7 @@
 {
   "sources": [
-    { "name": "SynDataset", "path": "~/SynDataset" }
+    { "name": "SynDataset", "path": "~/SynDataset" }, 
+    { "name": "RealDataset", "path": "~/RealDataset"}
   ],
   "reviewsFile": "./reviews.json"
 }
