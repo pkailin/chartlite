@@ -115,8 +115,36 @@ Add as many as you like, and each must follow the SynDataset layout:
   that list is still counted. Add `"oddAxes": [{ "key", "label", "values" }]` to
   the config to override the list.
 
-Accepted annotations are written to `reviewsFile` (gitignored by default):
-source → scenario → sensor → frame stem → time accepted.
+### Review state: `reviews.json`
+
+Every time you click **Accept** in the Annotations tab, the frame is recorded in
+the file named by `reviewsFile` (default `reviews.json` in this folder). This is
+how accepted frames stay marked across a refresh or restart.
+
+```json
+{
+ "version": 1,
+ "accepted": {
+  "SynDataset": {
+   "SCN-BCK-LIT_2oC2": {
+    "camera0": {
+     "1786057509900000000__2026-08-06_23-05-09-900Z": "2026-11-25T08:47:11.024Z"
+    }
+   }
+  }
+ }
+}
+```
+
+Read it as source → scenario → sensor → frame name → time accepted (UTC).
+Un-accepting a frame removes its line.
+
+- **It is created on the first Accept.** Until then the file does not exist.
+- **It is not committed.** It is in `.gitignore`, so review progress stays on
+  this machine. To back it up or share it, point `reviewsFile` somewhere else
+  (e.g. `"~/reviews/chartlite_reviews.json"`), or remove it from `.gitignore`.
+- **Deleting it resets every accept.** The dataset itself is never modified:
+  chartlite only reads from the source folders.
 
 ## Layout
 
