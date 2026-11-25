@@ -1,6 +1,6 @@
 > Moved from `usv_fleet_stack` `docs/superpowers/specs/2026-10-07-chartlite-design.md`
 > on 2026-11-25. A record of the design at the time: paths such as `src/chartlite/`
-> and `src/dataviz` refer to that repo.
+> refer to that repo.
 
 # chartlite — a clean standalone strait chart
 
@@ -9,7 +9,7 @@
 
 ## Why
 
-`src/dataviz` has grown into a seven-surface perception V&V instrument. That
+The fleet's full perception V&V instrument has grown many surfaces. That
 growth is deliberate and the surfaces earn their place, but it means there is no
 longer a small thing to build on: adding one new idea means landing it inside a
 programme spine, a rail system, a bitemporal archive and a coverage firewall.
@@ -17,9 +17,9 @@ programme spine, a rail system, a bitemporal archive and a coverage firewall.
 `chartlite` is a deliberately empty starting point — one tab showing the
 Singapore Strait — that features can be grown back onto one at a time.
 
-It takes **nothing** from `dataviz`: no code, no archive, no configuration, no
-shared modules. The two tools coexist on different ports and share only the
-public tile servers they both happen to use.
+It takes **nothing** from that instrument: no code, no archive, no
+configuration, no shared modules. The two tools coexist on different ports and
+share only the public tile servers they both happen to use.
 
 ## The eventual job, and why it shapes this build
 
@@ -28,7 +28,7 @@ The intended end state is:
 > ingest capture data → read the timestamps off it → fetch the weather that was
 > true at those instants → condition ODD coverage on it
 
-That is a different model from `dataviz`, which polls weather live on a 5-minute
+That is a different model from polling weather live on a 5-minute
 cadence. The live-poll model has a structural flaw that this design avoids:
 weather exists only for the wall-clock periods the poller happened to be
 running. Measured on the live archive on 2026-10-07, `nea-wind-speed` holds
@@ -135,11 +135,10 @@ rather than conclude it was required.
 
 ### Staleness: the trap not to inherit
 
-`dataviz` is copy-installed (`install(DIRECTORY)`), which `--symlink-install` does
-not cover, so an edit to its web sources does not reach `install/` until a
-rebuild. It carries a bundle-freshness gate to catch that, and the gate refuses
-to launch — which is a correct behaviour that still cost a user a blocked start
-during this design session.
+A copy-installed bundle (`install(DIRECTORY)`) is not covered by
+`--symlink-install`, so an edit to its web sources does not reach `install/`
+until a rebuild. Catching that takes a bundle-freshness gate, and the gate
+refuses to launch — a correct behaviour that still costs a blocked start.
 
 `chartlite` avoids the class rather than guarding against it:
 
@@ -165,7 +164,7 @@ clear message rather than letting a syntax error surface from inside the server.
 | Port | Owner |
 |---|---|
 | 3000 / 3001 / 3002 | aquarium GCS frontend and gateway |
-| 3200 | dataviz |
+| 3200 | the fleet's V&V instrument |
 | **3300** | **chartlite** |
 
 Overridable with `port:=`. The server binds and exits on `EADDRINUSE` rather than
@@ -193,10 +192,9 @@ component the cost of a headless-GL harness exceeds its value. It is verified by
 eye. This is a deliberate, revisitable call, recorded so the gap is known rather
 than assumed covered.
 
-Note the `dataviz` precedent: `colcon test --packages-select dataviz` passes
-vacuously because the generated CTest file is empty, while the package sits in
-the repo's gating regression scope — a green colcon result there is evidence of
-nothing.
+Note the trap: a package with no registered tests makes `colcon test` pass
+vacuously because the generated CTest file is empty — a green colcon result
+there is evidence of nothing.
 
 `chartlite` must not repeat it. `CMakeLists.txt` registers `npm test` as a CTest
 test under `if(BUILD_TESTING)`, so `colcon test --packages-select chartlite`
@@ -205,6 +203,6 @@ this package.
 
 ## Out of scope, explicitly
 
-Nothing in this build reads, writes, imports or links anything in `src/dataviz`.
+Nothing in this build reads, writes, imports or links anything outside this package.
 If a later step wants a shared module, that is a separate decision made on its
 own merits, not a default.

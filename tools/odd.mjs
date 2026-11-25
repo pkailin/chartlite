@@ -2,9 +2,8 @@
  * The ODD axes this tool can actually measure, and the maths behind them.
  *
  * Three axes, each derived from data in hand rather than
- * guessed. The band EDGES match ISO 34503 as the fleet's dataviz package reads
- * them, so a figure here and a figure there mean the same thing — that is the
- * only reason to copy numbers between two packages, and it is a good one.
+ * guessed. The band EDGES follow ISO 34503, so a figure here means the same thing
+ * as the same band anywhere else that follows the standard.
  *
  *   wind          kn, from NEA's station network
  *   rain          mm/h, from NEA — see RAIN_PERIOD_MIN for the trap

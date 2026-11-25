@@ -10,8 +10,8 @@ than conclude it was required. The fleet stack can be entirely down.
 
 **It serves the SOURCE tree, not install/.** `CMakeLists.txt` installs `launch/`
 and nothing else, so there is no copied bundle that can go stale behind an edit
-— the failure mode that makes dataviz carry a freshness gate that can refuse to
-start. The cost is that this package is not relocatable: an `install/` tree
+— the failure mode that forces a copy-installed bundle to carry a freshness
+gate that can refuse to start. The cost is that this package is not relocatable: an `install/` tree
 without its source beside it cannot serve, and `_source_dir()` below says so
 plainly when it cannot find the source.
 
@@ -31,7 +31,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 
-#: Clear of the aquarium GCS (3000 frontend, 3001/3002 gateway) and dataviz (3200).
+#: Clear of the aquarium GCS (3000 frontend, 3001/3002 gateway) and port 3200.
 DEFAULT_PORT = '3300'
 
 #: serve.mjs is stdlib-only, so this is the floor for the syntax it uses, not

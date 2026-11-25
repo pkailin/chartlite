@@ -5,10 +5,9 @@ find_package(ament_cmake REQUIRED)
 
 # ONLY launch/. The bundle is deliberately NOT installed.
 #
-# dataviz copy-installs its web bundle, which `--symlink-install` does not
-# cover, so an edit to its sources does not reach install/ until a rebuild — and
-# it needs a freshness gate to catch the resulting stale copy, a gate that
-# refuses to launch. Nothing is copied here, so there is no second copy that can
+# A copy-installed web bundle is not covered by `--symlink-install`, so an edit
+# to its sources does not reach install/ until a rebuild — and it then needs a
+# freshness gate to catch the stale copy, a gate that refuses to launch. Nothing is copied here, so there is no second copy that can
 # drift and nothing to gate: chartlite.launch.py resolves back to the source
 # tree and serve.mjs hands out dist/ from there.
 #
@@ -24,10 +23,9 @@ if(BUILD_TESTING)
   # REQUIRED, so a host without npm FAILS configuration rather than producing a
   # package whose tests silently do not exist.
   #
-  # `colcon test --packages-select dataviz` passes vacuously — its generated
-  # CTest file is empty — while that package sits in the repo's gating
-  # regression scope, so a green result there is evidence of nothing. This
-  # package must not acquire the same property.
+  # A package with no registered tests makes `colcon test` pass vacuously — its
+  # generated CTest file is empty — so a green result is evidence of nothing.
+  # This package must not have that property.
   find_program(NPM_EXECUTABLE npm REQUIRED)
 
   add_test(

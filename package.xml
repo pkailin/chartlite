@@ -11,8 +11,7 @@
     deliberately empty starting point that features are grown back onto one at
     a time.
 
-    Joins no DDS domain and needs no RTI Connext environment. Shares no code,
-    no data and no configuration with the dataviz package.
+    Joins no DDS domain and needs no RTI Connext environment.
   </description>
   <maintainer email="pc5ums001@gmail.com">USV Fleet Stack</maintainer>
   <license>Proprietary</license>

@@ -20,10 +20,10 @@ shares no code, data or configuration with it.
 
 ## Why it exists
 
-`dataviz` (in `usv_fleet_stack`) has grown into a seven-surface perception V&V instrument. The
-surfaces earn their place, but it means there is no small thing left to build
-on — adding one idea means landing it inside a programme spine, a rail system, a
-bitemporal archive and a coverage firewall.
+The fleet's full perception V&V instrument has grown many surfaces. They earn
+their place, but it means there is no small thing left to build on — adding one
+idea means landing it inside a programme spine, a rail system, a bitemporal
+archive and a coverage firewall.
 
 `chartlite` is a deliberately empty starting point that features are grown back
 onto one at a time.
@@ -78,9 +78,9 @@ a bug. When a keyless dark basemap exists, a theme becomes worth having.
 
 **It serves the source tree, and is not relocatable.** `CMakeLists.txt` installs
 `launch/` and nothing else, so no bundle is ever copied into `install/`. That is
-the point: `dataviz` copy-installs its bundle, which `--symlink-install` does not
-cover, so an edit does not reach `install/` until a rebuild — and it needs a
-freshness gate that can refuse to launch. Nothing is copied here, so there is no
+the point: a copy-installed bundle is not covered by `--symlink-install`, so an
+edit does not reach `install/` until a rebuild — and it then needs a freshness
+gate that can refuse to launch. Nothing is copied here, so there is no
 second copy to drift and nothing to gate. The cost is that an `install/` tree
 without its source beside it cannot serve. `CHARTLITE_ROOT` overrides the
 lookup if your layout breaks that assumption.
@@ -106,5 +106,3 @@ later must be checked the same way: fetch a tile and look at it.
 
 - [The design](docs/design.md) — why this exists, and the weather-by-timestamp
   model it is built toward.
-- `dataviz` in `usv_fleet_stack` — the full instrument this is a clean slate
-  against.
