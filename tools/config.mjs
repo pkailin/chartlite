@@ -7,6 +7,9 @@
  *       { "name": "SynDataset2", "path": "/media/disk/SynDataset2" }
  *     ],
  *     "reviewsFile": "./reviews.json",
+ *     // per source, optional: override configs/<version>/ calibration
+ *     //   "calibration": { "radar": { "meters_per_pixel": 1.8086 },
+ *     //                    "camera0": { "yaw_deg": -30, "pitch_deg": 0 } }
  *     "oddAxes": [ ... ]            // optional, overrides tools/odd.mjs
  *   }
  *
@@ -64,7 +67,10 @@ export function parseConfig(raw, baseDir) {
     if (typeof s.path !== 'string' || s.path.length === 0) {
       throw new Error(`config: sources[${i}].path must be a string`);
     }
-    return { name: s.name, root: resolveFrom(baseDir, s.path), path: s.path };
+    if (s.calibration !== undefined && (typeof s.calibration !== 'object' || s.calibration === null)) {
+      throw new Error(`config: sources[${i}].calibration must be an object`);
+    }
+    return { name: s.name, root: resolveFrom(baseDir, s.path), path: s.path, calibration: s.calibration ?? {} };
   });
 
   let axes = DEFAULT_AXES;

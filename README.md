@@ -17,6 +17,10 @@ each scenario's 2D-box annotations and accept them frame by frame.
 - **Annotations:** the frame image with its `2dbbox` boxes drawn over it. Step
   with ← / →, accept with A, accept and advance with Enter. Accepted frames are
   marked on the frame, on the timeline strip and in the scenario list.
+- **Targets:** annotated frames that contain a GNSS-tracked target vessel
+  (`groundtruth/<SCN>/targets/gps`, matched to boxes by `id`), with each box
+  compared to where GNSS says the target was. See
+  [Target accuracy](#target-accuracy).
 
 ## Quick start
 
@@ -115,6 +119,41 @@ Add as many as you like, and each must follow the SynDataset layout:
   that list is still counted. Add `"oddAxes": [{ "key", "label", "values" }]` to
   the config to override the list.
 
+### Target accuracy
+
+The **TARGETS** tab checks each box whose `id` appears in that frame's
+`targets/gps` file against own-ship GNSS (`gnss_info.csv`) and the target's
+GNSS fix.
+
+- **Radar: range and bearing.** The box centre's distance and angle from
+  own-ship pixel, converted with `configs/<calibration_version>/radar_params.yaml`
+  (`origin_px`, `meters_per_pixel` or `scanner_range_m`, `alignment`), against
+  GNSS range and bearing. A cross marks the GNSS position, with a line from the
+  box to it. The panel also shows the **best-fit scale**, so a wrong range
+  setting shows up as a mismatch, not a silent bias.
+- **Camera: bearing only.** The box centre is undistorted with
+  `<camera>_intrinsic.yaml`, turned into an angle and shifted by the camera's
+  yaw from `extrinsic_params.yaml`. A dashed line marks the GNSS bearing. One
+  image cannot give range: a target 600 m away is only a few pixels below the
+  horizon, and hull pitch moves the horizon more than that. Box width is shown
+  in metres at the GNSS range, beside the vessel's size from
+  `target_registry.json`.
+- **Missing calibration.** A camera yaw that is missing or `TBD` is fitted from
+  the targets and labelled *fitted*. That removes any constant offset, so only
+  the spread is meaningful. A missing pitch is taken as 0. Mount lever arms,
+  hull roll and pitch are not modelled.
+- **Colours:** green ≤ 2° / 20 m, amber ≤ 5° / 50 m, red beyond.
+
+Override calibration per source in `chartlite.config.json`:
+
+```json
+{ "name": "RealDataset", "path": "~/RealDataset",
+  "calibration": {
+    "radar":   { "meters_per_pixel": 1.8086 },
+    "camera0": { "yaw_deg": -30, "pitch_deg": 0 }
+  } }
+```
+
 ### Review state: `reviews.json`
 
 Every time you click **Accept** in the Annotations tab, the frame is recorded in
@@ -153,6 +192,8 @@ chartlite.config.json         the sources to read
 serve.mjs                     static server for dist/ + the API
 server/api.mjs                /api/* and /data/* (also mounted by `npm run dev`)
 server/reviews.mjs            accepted-annotation store
+tools/accuracy.mjs            box-vs-target-GNSS geometry and report
+tools/yaml-lite.mjs           minimal YAML reader for calibration files
 tools/config.mjs              config loading and validation
 tools/syndataset.mjs          adapter: SynDataset layout → corpus
 tools/odd.mjs                 ODD attributes and their values
@@ -161,6 +202,7 @@ src/data/corpus.ts            the corpus shape the adapter writes, and coverage
 src/map/                      the MapLibre chart, basemap, route layers
 src/panels/CoveragePanel.tsx  ODD coverage
 src/review/                   the annotation reviewer
+src/accuracy/                 the target accuracy tab
 launch/chartlite.launch.py    optional ROS 2 launch entry
 ```
 

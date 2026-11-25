@@ -6,6 +6,8 @@
  *   GET  /api/reviews?source=&scenario=               accepted frames, per sensor
  *   GET  /api/reviews/summary                         accepted counts only
  *   POST /api/reviews  {source,scenario,sensor,frames:[stem],accepted}
+ *   GET  /api/accuracy/scenarios                      scenarios that have targets/gps
+ *   GET  /api/accuracy?source=&scenario=              box-vs-GNSS report (tools/accuracy.mjs)
  *   GET  /data/<source>/(rawdata|groundtruth)/…       dataset images and box JSON
  *
  * The config is re-read on every request, so a source added to
@@ -20,6 +22,7 @@ import { createReadStream, existsSync, realpathSync, statSync } from 'node:fs';
 import { extname, join, resolve, sep } from 'node:path';
 import { NAME_RE, configFileFromArgs, loadConfig } from '../tools/config.mjs';
 import { buildCorpus, isDir, listFrames, scenarioDir, sensorKind } from '../tools/syndataset.mjs';
+import { scenarioAccuracy, scenariosWithTargets } from '../tools/accuracy.mjs';
 import { readStore, scenarioReviews, setAccepted, summary, writeStore } from './reviews.mjs';
 
 const DATA_TYPES = {
@@ -78,6 +81,13 @@ function need(params, key) {
 export function createApi({ configFile = configFileFromArgs() } = {}) {
   /* Writes are serialised so two quick clicks cannot interleave read-modify-write. */
   let writing = Promise.resolve();
+  /*
+   * Accuracy reports, keyed by source, scenario and that source's calibration
+   * overrides, so editing the overrides in the config takes effect at once.
+   * Dataset files are not expected to change under a running server; restart
+   * it if they do.
+   */
+  const reports = new Map();
 
   /** Returns true if it handled the request. */
   return async function handle(req, res) {
@@ -129,6 +139,31 @@ export function createApi({ configFile = configFileFromArgs() } = {}) {
           bboxBase: `/data/${enc(sourceName)}/groundtruth/${enc(scenario)}/${enc(sensor)}/2dbbox/`,
           frames: listFrames(source.root, scenario, sensor),
         });
+        return true;
+      }
+
+      if (p === '/api/accuracy/scenarios' && req.method === 'GET') {
+        send(res, 200, config.sources.flatMap((s) => scenariosWithTargets(s.root).map((dir) => ({ source: s.name, dir }))));
+        return true;
+      }
+
+      if (p === '/api/accuracy' && req.method === 'GET') {
+        const sourceName = need(url.searchParams, 'source');
+        const scenario = need(url.searchParams, 'scenario');
+        const source = config.sources.find((s) => s.name === sourceName);
+        if (!source) { send(res, 404, { error: `no source "${sourceName}"` }); return true; }
+        if (!isDir(join(source.root, 'groundtruth', scenario, 'targets', 'gps'))) {
+          send(res, 404, { error: `no groundtruth/${scenario}/targets/gps` });
+          return true;
+        }
+        const key = JSON.stringify([source.name, source.root, scenario, source.calibration]);
+        let report = reports.get(key);
+        if (!report) {
+          report = scenarioAccuracy(source, scenario);
+          if (reports.size > 64) reports.clear();
+          reports.set(key, report);
+        }
+        send(res, 200, report);
         return true;
       }
 

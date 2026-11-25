@@ -769,3 +769,71 @@ body {
   line-height: 1.6;
   color: var(--ink-dim);
 }
+
+/* ── Target accuracy ───────────────────────────────────────────────────── */
+
+.acc-card {
+  margin: 0.4rem 0 0.7rem;
+  padding: 0.4rem 0.5rem;
+  background: #fff;
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--rule);
+}
+
+.acc-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.74rem;
+  margin-bottom: 0.25rem;
+}
+
+.acc-grade {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.acc-ok { color: #1f7a3a; }
+.acc-warn { color: #a86a00; }
+.acc-bad { color: var(--alarm); }
+
+.acc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.acc-table th {
+  text-align: right;
+  font-weight: 600;
+  color: var(--ink-dim);
+  padding: 0.1rem 0.25rem;
+}
+
+.acc-table td {
+  text-align: right;
+  padding: 0.1rem 0.25rem;
+  border-top: 1px solid rgba(22, 32, 42, 0.06);
+}
+
+.acc-table th:first-child,
+.acc-table td:first-child {
+  text-align: left;
+}
+
+.acc-worst {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.acc-worst .btn {
+  padding: 0.15rem 0.45rem;
+  font-size: 0.66rem;
+}
